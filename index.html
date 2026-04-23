@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RunnerTrack - Mobile Operations</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .hidden-view { display: none !important; }
+        .spinner { border: 3px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: #fff; width: 20px; height: 20px; animation: spin 1s ease-in-out infinite; display: inline-block; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .btn-toggle.active { 
+            border-color: #3b82f6 !important; background-color: #eff6ff !important; color: #1d4ed8 !important; box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.06) !important; 
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans antialiased pb-24">
+
+    <div id="login-screen" class="fixed inset-0 z-50 bg-slate-900 flex flex-col items-center justify-center p-6 transition-opacity duration-500">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center">
+            <h1 class="text-3xl font-black text-blue-600 mb-2 italic">RunnerTrack</h1>
+            <p class="text-slate-500 mb-6 text-sm">Please login to continue</p>
+            <form id="login-form" class="space-y-4">
+                <input type="email" id="login-email" placeholder="Work Email" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" required>
+                <input type="password" id="login-pin" placeholder="Access PIN" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" required>
+                <button type="submit" class="w-full bg-blue-600 text-white font-black py-4 rounded-xl hover:bg-blue-700 shadow-lg mt-2 tracking-widest uppercase text-xs">Authorize</button>
+            </form>
+            <p id="login-error" class="text-red-500 text-xs mt-4 hidden font-bold">Invalid Email or PIN</p>
+        </div>
+    </div>
+
+    <div id="app-container" class="max-w-md mx-auto bg-slate-50 min-h-screen shadow-2xl relative hidden-view">
+        <header class="bg-blue-600 text-white p-5 shadow-md sticky top-0 z-30 flex justify-between items-center rounded-b-3xl">
+            <h1 class="text-xl font-black italic tracking-tighter">RunnerTrack</h1>
+            <div class="flex items-center gap-3">
+                <span class="bg-blue-800 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-inner" id="header-role"></span>
+                <button onclick="logout()" class="text-white bg-blue-700 p-2 rounded-full h-9 w-9 flex items-center justify-center shadow-lg"><i class="fa-solid fa-power-off"></i></button>
+            </div>
+        </header>
+
+        <div id="view-dashboard" class="p-6">
+            <div id="sync-banner" class="hidden-view bg-gradient-to-r from-amber-100 to-orange-100 border-l-4 border-amber-500 p-4 mb-6 rounded-r-2xl shadow-sm flex justify-between items-center">
+                <div>
+                    <p class="text-xs font-black text-amber-800 uppercase tracking-widest"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Pending Sync</p>
+                    <p class="text-[10px] text-amber-700 font-bold mt-1"><span id="sync-count">0</span> logs saved locally.</p>
+                </div>
+                <button onclick="syncOfflineQueue()" id="btn-sync-now" class="bg-amber-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md hover:bg-amber-600 transition"><i class="fa-solid fa-rotate mr-1"></i> Sync</button>
+            </div>
+
+            <div class="flex justify-between items-center mb-4 mt-2">
+                <h2 class="text-lg font-black text-slate-900">My Activity Log</h2>
+                <button onclick="fetchData()" class="text-blue-600 bg-blue-50 p-2 rounded-full hover:bg-blue-100 transition shadow-sm"><i class="fa-solid fa-rotate-right"></i></button>
+            </div>
+            <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                <ul id="activity-list" class="divide-y divide-slate-100 text-sm"></ul>
+            </div>
+        </div>
+
+        <div id="view-form" class="p-5 hidden-view">
+            <form id="runnerForm" class="space-y-6">
+                <div class="bg-blue-50 text-blue-800 text-[11px] p-4 rounded-2xl border border-blue-200 flex justify-between items-center">
+                    <span><i class="fa-solid fa-location-crosshairs mr-2"></i><span id="gps-status" class="font-bold text-red-600 italic uppercase">GPS Required</span></span>
+                    <button type="button" onclick="getGPS()" class="text-blue-700 font-black bg-white px-3 py-1 rounded-full shadow-sm uppercase tracking-tighter">Refresh</button>
+                </div>
+                <input type="hidden" id="input-gps" value="">
+
+                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Operation Area *</label>
+                        <select id="input-area" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-blue-700" required onchange="filterByArea()"></select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Runner Name *</label>
+                        <select id="input-runner" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700" required></select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Merchant Location *</label>
+                        <input type="hidden" id="input-business" required onchange="resetKit()">
+                        <button type="button" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left flex justify-between items-center font-bold text-slate-700" onclick="toggleModal('modal-business')">
+                            <span id="label-business" class="text-slate-400 font-normal">Select Location...</span>
+                            <i class="fa-solid fa-chevron-down text-blue-500"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Operational Phase *</label>
+                    <select id="input-phase" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-blue-700 outline-none" required onchange="toggleFormFields()">
+                        <option value="">-- Select Phase --</option>
+                        <option value="Phase 1">Phase 1 (Kit Delivery)</option>
+                        <option value="Phase 2">Phase 2 (SD Delivery)</option>
+                        <option value="Phase 3">Phase 3 (SD Collection)</option>
+                        <option value="Phase 4">Phase 4 (Kit Return)</option>
+                    </select>
+                </div>
+
+                <div id="field-sdr" class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
+                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">SDR Name (Sales) *</label>
+                    <select id="input-sdr-name" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"></select>
+                </div>
+
+                <div id="field-kit" class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
+                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Kit Identification *</label>
+                    <div id="selected-kits-container" class="flex flex-wrap gap-2 mb-2"></div>
+                    <input type="hidden" id="input-kit">
+                    <button type="button" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left flex justify-between items-center font-bold text-blue-600" onclick="toggleModal('modal-kit')">
+                        <span>+ Add Kit ID...</span>
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                    <p id="kit-error" class="text-[11px] text-red-600 font-bold hidden bg-red-50 p-3 rounded-xl border border-red-100 italic"></p>
+                </div>
+
+                <div id="field-checklist" class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+                    <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest mb-4 border-b pb-3">Kit Contents: <span id="kit-type-label" class="text-slate-400"></span></label>
+                    <div id="checklist-items" class="space-y-3 text-sm mb-6"></div>
+                    <div class="mb-5">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 tracking-widest">Physical Integrity *</label>
+                        <input type="hidden" id="input-condition">
+                        <div class="flex gap-3">
+                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-condition', 'Good')">GOOD</button>
+                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-condition', 'Damaged')">DAMAGED</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 tracking-widest">Audit Checklist Match? *</label>
+                        <input type="hidden" id="input-match">
+                        <div class="flex gap-3">
+                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-match', 'Yes')">YES</button>
+                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-match', 'No')">NO</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="field-sd" class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+                    <label id="label-sd" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">SD Count *</label>
+                    <input type="number" id="input-sd" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xl font-black outline-none text-blue-700" placeholder="0">
+                </div>
+
+                <div id="field-sdupload" class="hidden bg-amber-50 p-6 rounded-[2rem] border border-amber-200">
+                    <label class="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-3">Begin SD Upload Now? *</label>
+                    <input type="hidden" id="input-sdupload">
+                    <div class="flex gap-3">
+                        <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-amber-300 rounded-2xl font-bold text-amber-700" onclick="setBtn(this, 'input-sdupload', 'Yes')">YES</button>
+                        <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-amber-300 rounded-2xl font-bold text-amber-700" onclick="setBtn(this, 'input-sdupload', 'No')">NO</button>
+                    </div>
+                </div>
+
+                <div id="field-commons" class="hidden space-y-6">
+                    <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Pickup Time</label>
+                                <input type="time" id="input-pickup-time" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-sm font-bold text-blue-700">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Drop Off Time</label>
+                                <input type="time" id="input-dropoff-time" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-sm font-bold text-blue-700">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-6">
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Visual Proof (Photo) *</label>
+                            <input type="file" id="input-photo" accept="image/*" capture="environment" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Other Item / Notes (Optional)</label>
+                            <input type="text" id="input-other-item" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-sm font-bold" placeholder="E.g., extra cables, keys...">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Field Notes / Issue Details</label>
+                            <textarea id="input-issue" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-sm" rows="2" placeholder="Describe any missing items or damage..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" id="btn-submit" class="w-full bg-blue-600 text-white font-black py-5 rounded-[2rem] shadow-xl hover:bg-blue-700 flex justify-center items-center text-lg disabled:opacity-50 uppercase tracking-widest">
+                    <span id="btn-text">Transmit Data</span>
+                    <span id="btn-loading" class="hidden"><div class="spinner mr-2"></div> Saving...</span>
+                </button>
+            </form>
+        </div>
+
+        <nav class="fixed bottom-0 w-full max-w-md bg-white border-t border-slate-100 flex justify-around text-[10px] uppercase font-black text-slate-400 shadow-2xl z-10 pb-safe">
+            <button onclick="switchTab('dashboard')" class="flex-1 py-5 flex flex-col items-center text-blue-600" id="tab-dashboard"><i class="fa-solid fa-list-ul text-xl mb-1"></i> Log</button>
+            <button onclick="switchTab('form')" class="flex-1 py-5 flex flex-col items-center" id="tab-form"><i class="fa-solid fa-circle-plus text-xl mb-1"></i> Submit</button>
+        </nav>
+    </div>
+
+    <div id="modal-business" class="fixed inset-0 z-50 bg-slate-900/50 hidden flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white w-full max-w-md mx-auto rounded-t-[2.5rem] h-[75vh] flex flex-col shadow-2xl">
+            <div class="p-6 border-b flex justify-between items-center"><h3 class="font-black text-slate-800 uppercase text-xs tracking-widest">Select Merchant</h3><button onclick="toggleModal('modal-business')"><i class="fa-solid fa-xmark text-xl text-slate-300"></i></button></div>
+            <div class="p-5 bg-slate-50"><input type="text" id="search-business" class="w-full p-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold" placeholder="Search locations..." onkeyup="renderBusinessList()"></div>
+            <ul id="list-business" class="flex-1 overflow-y-auto divide-y"></ul>
+            <div class="p-6 border-t bg-white"><button type="button" onclick="openAddBizModal()" class="w-full bg-blue-50 text-blue-600 font-black py-4 rounded-2xl hover:bg-blue-100">+ Register Location</button></div>
+        </div>
+    </div>
+
+    <div id="modal-add-biz" class="fixed inset-0 z-[60] bg-slate-900/80 hidden flex-col justify-center items-center p-6 backdrop-blur-md">
+        <div class="bg-white w-full max-w-sm rounded-[2rem] p-8 shadow-2xl">
+            <h3 class="font-black text-2xl mb-2">New Merchant</h3>
+            <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-6">Area: <span id="add-biz-area-label"></span></p>
+            <input type="text" id="input-new-biz-name" placeholder="Business Name" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-8 font-bold outline-none">
+            <div class="flex gap-4">
+                <button type="button" onclick="closeAddBizModal()" class="flex-1 bg-slate-100 py-4 rounded-2xl font-bold text-slate-500">Cancel</button>
+                <button type="button" onclick="submitNewBusiness()" id="btn-submit-new-biz" class="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl shadow-lg">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-kit" class="fixed inset-0 z-50 bg-slate-900/50 hidden flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white w-full max-w-md mx-auto rounded-t-[2.5rem] h-[75vh] flex flex-col shadow-2xl">
+            <div class="p-6 border-b flex justify-between items-center"><h3 class="font-black text-slate-800 uppercase text-xs tracking-widest">Select Kit ID</h3><button onclick="toggleModal('modal-kit')"><i class="fa-solid fa-xmark text-xl text-slate-300"></i></button></div>
+            <div class="p-5 bg-slate-50"><input type="text" id="search-kit" class="w-full p-4 border rounded-2xl outline-none uppercase font-bold" placeholder="Type Kit ID to Search..." onkeyup="renderKitList()"></div>
+            <ul id="list-kit" class="flex-1 overflow-y-auto divide-y"></ul>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed top-10 left-1/2 transform -translate-x-1/2 px-8 py-5 rounded-full shadow-2xl opacity-0 transition-all pointer-events-none z-50 font-black text-xs uppercase tracking-widest">Success!</div>
+
+    <script>
+        const db = window.supabase.createClient('https://ksdulyitxvtfvxgoqotd.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZHVseWl0eHZ0ZnZ4Z29xb3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1ODgzNzEsImV4cCI6MjA5MTE2NDM3MX0.nJ4lUtAKKBt_NQu0vZo8Dn6R7GfuE4qpgEfGYkkvh40');
+        
+        let currentUser = null;
+        let globalTransactions = [], globalKitMap = new Map();
+        let masterAreas = [], masterRunners = [], masterBusinesses = [], masterKitsData = [], masterKitTypes = [], masterSdrs = [];
+        let selectedKits = []; 
+        
+        /** AUTHENTICATION (SECURED) **/
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value.toLowerCase().trim();
+            const pin = document.getElementById('login-pin').value;
+            const errorText = document.getElementById('login-error');
+
+            try {
+                const { data: authData, error: authError } = await db.auth.signInWithPassword({ email: email, password: pin });
+                await db.auth.getSession();
+                if (authError) throw new Error("Invalid Email or PIN.");
+
+                const { data: userData, error: userError } = await db.from('master_users').select('*').ilike('email', email).single();
+                if (userError || !userData) {
+                    await db.auth.signOut();
+                    throw new Error("Your account is not registered in the system.");
+                }
+
+                const userRole = userData.role.toLowerCase();
+                if (userRole !== 'staff' && userRole !== 'admin') {
+                    await db.auth.signOut();
+                    throw new Error("Access Denied: Invalid credentials.");
+                }
+
+                errorText.classList.add('hidden');
+                localStorage.setItem('runner_user', JSON.stringify(userData));
+
+                if (typeof initApp === 'function') initApp();
+                else window.location.reload();
+
+            } catch (err) {
+                errorText.innerText = err.message;
+                errorText.classList.remove('hidden');
+            }
+        });
+
+        async function logout() { 
+            await db.auth.signOut(); 
+            localStorage.removeItem('runner_user'); 
+            window.location.reload(); 
+        }
+
+        async function initApp() {
+            const { data: { session } } = await db.auth.getSession();
+            currentUser = JSON.parse(localStorage.getItem('runner_user'));
+            
+            if(!session || !currentUser) { 
+                document.getElementById('login-screen').classList.remove('hidden-view'); 
+                document.getElementById('app-container').classList.add('hidden-view'); 
+                return; 
+            }
+            document.getElementById('login-screen').classList.add('hidden-view'); 
+            document.getElementById('app-container').classList.remove('hidden-view');
+            document.getElementById('header-role').innerText = currentUser.role.toUpperCase();
+            
+            fetchMasterData(); fetchData(); updateSyncUI();
+        }
+
+        /** DATA LOADERS **/
+        async function fetchMasterData() {
+            try {
+                masterAreas = (await db.from('master_areas').select('*').order('area_name')).data || [];
+                masterRunners = (await db.from('master_runners').select('*').order('runner_name')).data || [];
+                masterBusinesses = (await db.from('master_businesses').select('*').order('business_name')).data || [];
+                masterKitsData = (await db.from('master_kits').select('*').order('kit_id')).data || [];
+                masterKitTypes = (await db.from('master_kit_types').select('*')).data || [];
+                masterSdrs = (await db.from('master_sdrs').select('*').order('sdr_name')).data || [];
+
+                if(currentUser.role === 'Staff') {
+                    const myRunner = masterRunners.find(r => r.runner_name === currentUser.runner_name);
+                    const myArea = myRunner ? myRunner.area_name : '';
+                    document.getElementById('input-area').innerHTML = `<option value="${myArea}">${myArea}</option>`;
+                    document.getElementById('input-area').disabled = true;
+                    document.getElementById('input-runner').innerHTML = `<option value="${currentUser.runner_name}">${currentUser.runner_name}</option>`;
+                    document.getElementById('input-runner').disabled = true;
+                    filterByArea(); 
+                } else {
+                    document.getElementById('input-area').innerHTML = `<option value="">-- Select Area --</option>` + masterAreas.map(a => `<option value="${a.area_name}">${a.area_name}</option>`).join('');
+                }
+            } catch(e) { console.error("Offline or Failed fetching master data.", e); }
+        }
+
+        function filterByArea() {
+            const area = document.getElementById('input-area').value;
+            if(currentUser.role.toLowerCase() === 'admin') {
+                const runners = masterRunners.filter(r => r.area_name === area);
+                document.getElementById('input-runner').innerHTML = `<option value="">-- Select Runner --</option>` + runners.map(r => `<option value="${r.runner_name}">${r.runner_name}</option>`).join('');
+            }
+            
+            const filteredSdrs = masterSdrs.filter(s => s.area_name === area);
+            document.getElementById('input-sdr-name').innerHTML = `<option value="">-- Select SDR --</option>` + filteredSdrs.map(s => `<option value="${s.sdr_name}">${s.sdr_name}</option>`).join('');
+            
+            document.getElementById('input-business').value = ""; document.getElementById('label-business').innerText = "Select Location...";
+            resetKit(); 
+        }   
+
+        function renderBusinessList() {
+            const area = document.getElementById('input-area').value;
+            const search = document.getElementById('search-business').value.toLowerCase();
+            const filtered = masterBusinesses.filter(b => (!area || b.area_name === area) && b.business_name.toLowerCase().includes(search));
+            document.getElementById('list-business').innerHTML = filtered.map(b => `<li class="p-5 hover:bg-slate-50 cursor-pointer font-black text-slate-700" onclick="selectBusiness('${b.business_name}')">${b.business_name}</li>`).join('');
+        }
+
+        function getKitBadge(typeName) {
+            const recipe = masterKitTypes.find(t => t.type_name === typeName);
+            if (recipe && recipe.ui_icon && recipe.ui_color) {
+                return { icon: `<i class="fa-solid ${recipe.ui_icon} mr-1"></i>`, colorClass: `bg-${recipe.ui_color}-50 text-${recipe.ui_color}-700 border-${recipe.ui_color}-200` };
+            }
+            return { icon: '<i class="fa-solid fa-box mr-1"></i>', colorClass: 'bg-slate-100 text-slate-600 border-slate-200' };
+        }
+
+        function renderKitList() {
+            const area = document.getElementById('input-area').value;
+            const phase = document.getElementById('input-phase').value;
+            const search = document.getElementById('search-kit').value.toUpperCase();
+            const business = document.getElementById('input-business').value;
+            const listEl = document.getElementById('list-kit');
+            
+            let filtered = masterKitsData.filter(k => {
+                const areaMatch = !area || k.area_name === area;
+                const searchMatch = k.kit_id.includes(search);
+                const conditionMatch = k.current_status === 'Good'; 
+                
+                const kitState = globalKitMap.get(k.kit_id) || { status: 'Available', location: 'Warehouse' };
+                let phaseMatch = true;
+                const isAdmin = currentUser.role.toLowerCase() === 'admin';
+                
+                if (!isAdmin) {
+                    if (phase === 'Phase 1') phaseMatch = (kitState.status === 'Available');
+                    if (phase === 'Phase 4') phaseMatch = (kitState.status === 'Deployed' && kitState.location === business);
+                }
+
+                return areaMatch && searchMatch && conditionMatch && phaseMatch;
+            });
+
+            if(filtered.length === 0) listEl.innerHTML = `<li class="p-10 text-center text-slate-400 text-xs italic">No eligible Good kits found for this location.</li>`;
+            else listEl.innerHTML = filtered.map(k => {
+                const badge = getKitBadge(k.kit_type);
+                return `<li class="p-5 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition" onclick="selectKit('${k.kit_id}')">
+                    <span class="font-black text-slate-800">${k.kit_id}</span>
+                    <span class="text-[9px] font-black uppercase px-2 py-1 rounded border shadow-sm flex items-center ${badge.colorClass}">${badge.icon} ${k.kit_type}</span>
+                </li>`;
+            }).join('');        
+        }
+
+        function selectBusiness(name) {
+            document.getElementById('input-business').value = name; document.getElementById('label-business').innerText = name;
+            document.getElementById('label-business').classList.replace('text-slate-400', 'text-slate-800');
+            toggleModal('modal-business'); resetKit();
+        }
+
+        function selectKit(id) {
+            if (selectedKits.includes(id)) { alert("Kit ID already added!"); return; }
+            selectedKits.push(id);
+            renderSelectedKits();
+            toggleModal('modal-kit'); validateKit();
+        }
+
+        function renderSelectedKits() {
+            const container = document.getElementById('selected-kits-container');
+            container.innerHTML = selectedKits.map(id => `
+                <div class="bg-blue-600 text-white px-3 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-md">
+                    ${id}
+                    <button type="button" onclick="removeKit('${id}')" class="hover:text-red-300"><i class="fa-solid fa-circle-xmark"></i></button>
+                </div>
+            `).join('');
+            document.getElementById('input-kit').value = selectedKits.join(',');
+        }
+
+        function removeKit(id) {
+            selectedKits = selectedKits.filter(k => k !== id);
+            renderSelectedKits(); validateKit();
+        }
+
+        function resetKit() {
+            selectedKits = [];
+            if (document.getElementById('selected-kits-container')) document.getElementById('selected-kits-container').innerHTML = '';
+            document.getElementById('input-kit').value = ""; 
+            document.getElementById('search-kit').value = "";
+            validateKit();
+        }
+
+        function openAddBizModal() {
+            const area = document.getElementById('input-area').value;
+            if(!area) { alert("Please select an Area first!"); return; }
+            document.getElementById('add-biz-area-label').innerText = area.toUpperCase();
+            document.getElementById('modal-add-biz').classList.replace('hidden', 'flex');
+        }
+
+        function closeAddBizModal() { document.getElementById('modal-add-biz').classList.replace('flex', 'hidden'); }
+
+        async function submitNewBusiness() {
+            if (!navigator.onLine) { alert("Internet connection required! You must be online to register a new location."); return; }
+            
+            const area = document.getElementById('input-area').value;
+            const rawName = document.getElementById('input-new-biz-name').value.trim();
+            if(!rawName) return;
+            const finalName = `${rawName} - ${area}`;
+            
+            try {
+                const { error } = await db.from('master_businesses').insert([{ area_name: area, business_name: finalName }]);
+                if (error) throw error;
+                
+                masterBusinesses.push({ area_name: area, business_name: finalName }); 
+                closeAddBizModal(); 
+                selectBusiness(finalName);
+                showToast("New Location Registered!");
+            } catch (err) { alert("Failed to register location: " + err.message); }
+        }
+
+        function toggleModal(id) {
+            const el = document.getElementById(id);
+            if(el.classList.contains('hidden')) { 
+                el.classList.replace('hidden', 'flex'); 
+                if(id === 'modal-business') renderBusinessList(); 
+                if(id === 'modal-kit') renderKitList(); 
+            } else el.classList.replace('flex', 'hidden');
+        }
+
+        function setBtn(btnElement, inputId, val) {
+            document.getElementById(inputId).value = val;
+            Array.from(btnElement.parentElement.children).forEach(child => child.classList.remove('active'));
+            btnElement.classList.add('active');
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('[id^="view-"]').forEach(el => el.classList.add('hidden-view'));
+            document.querySelectorAll('[id^="tab-"]').forEach(el => el.classList.remove('text-blue-600'));
+            document.getElementById(`view-${tabName}`).classList.remove('hidden-view');
+            document.getElementById(`tab-${tabName}`).classList.add('text-blue-600');
+            if(tabName === 'dashboard') fetchData();
+            if(tabName === 'form' && !document.getElementById('input-gps').value) getGPS();
+        }
+
+        function toggleFormFields() {
+            const phase = document.getElementById('input-phase').value;
+            ['field-kit', 'field-checklist', 'field-sd', 'field-commons', 'field-sdupload', 'field-sdr'].forEach(id => {
+                const el = document.getElementById(id);
+                if(el) el.classList.add('hidden');
+            });
+            
+            // --- RESET STATE KEBOCORAN (LEAKAGE) ---
+            // Pastikan input tersembunyi benar-benar kosong saat ganti fase
+            document.getElementById('input-condition').value = "";
+            document.getElementById('input-match').value = "";
+            document.getElementById('input-sdupload').value = "";
+            // Hilangkan warna biru/aktif pada tombol toggle YES/NO/GOOD/DAMAGED
+            document.querySelectorAll('.btn-toggle').forEach(btn => btn.classList.remove('active'));
+            // ---------------------------------------
+
+            const currentTime = new Date().toTimeString().slice(0,5); 
+            const pickUpInput = document.getElementById('input-pickup-time');
+            const dropOffInput = document.getElementById('input-dropoff-time');
+
+            if (phase === 'Phase 1' || phase === 'Phase 2') { 
+                if(phase === 'Phase 1') { document.getElementById('field-kit').classList.remove('hidden'); document.getElementById('field-sdr').classList.remove('hidden'); }
+                if(phase === 'Phase 2') { document.getElementById('field-sd').classList.remove('hidden'); document.getElementById('label-sd').innerText = "SD Delivered Quantity *"; }
+                
+                document.getElementById('field-commons').classList.remove('hidden');
+                pickUpInput.value = currentTime; dropOffInput.value = "";        
+            } 
+            else if (phase === 'Phase 3' || phase === 'Phase 4') { 
+                if(phase === 'Phase 3') { document.getElementById('field-sd').classList.remove('hidden'); document.getElementById('label-sd').innerText = "SD Collected Quantity *"; }
+                if(phase === 'Phase 4') { document.getElementById('field-kit').classList.remove('hidden'); }
+                
+                document.getElementById('field-sdupload').classList.remove('hidden'); document.getElementById('field-commons').classList.remove('hidden');
+                pickUpInput.value = ""; dropOffInput.value = currentTime; 
+            }
+            resetKit();
+        }
+
+        function validateKit() {
+            const phase = document.getElementById('input-phase').value;
+            const business = document.getElementById('input-business').value;
+            const errLabel = document.getElementById('kit-error');
+            const btnSubmit = document.getElementById('btn-submit');
+            
+            errLabel.classList.add('hidden'); btnSubmit.disabled = false; document.getElementById('field-checklist').classList.add('hidden');
+            
+            if(selectedKits.length === 0 || (phase !== 'Phase 1' && phase !== 'Phase 4')) return;
+
+            const isAdmin = currentUser.role.toLowerCase() === 'admin';
+            let checklistHTML = ''; 
+            let overrideMessages = [];
+            
+            // Variabel untuk menyimpan Wristcam yang sudah otomatis ter-assign di loop ini
+            let usedOrphans = new Set(); 
+
+            for (let kitId of selectedKits) {
+                const kitMaster = masterKitsData.find(k => k.kit_id === kitId);
+                const kitState = globalKitMap.get(kitId) || { status: 'Available', location: 'Warehouse' };
+
+                if(!kitMaster) { 
+                    errLabel.innerText = `ERROR: ID ${kitId} not recognized.`; 
+                    errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                }
+                if(kitMaster.current_status === 'Damaged') { 
+                    errLabel.innerText = `REJECTED: Kit ${kitId} is QUARANTINED.`; 
+                    errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                }
+                
+                if (!isAdmin) {
+                    if(phase === 'Phase 1' && kitState.status !== 'Available') { 
+                        errLabel.innerText = `REJECTED: ${kitId} is already deployed at ${kitState.location}`; 
+                        errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                    }
+                    if(phase === 'Phase 4') {
+                        if(kitState.status !== 'Deployed') { 
+                            errLabel.innerText = `REJECTED: ${kitId} is already in Warehouse.`; 
+                            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                        }
+                        if(kitState.location !== business) { 
+                            errLabel.innerText = `REJECTED: ${kitId} belongs to ${kitState.location}.`; 
+                            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                        }
+                    }
+                } else {
+                    errLabel.className = "text-[11px] font-bold hidden bg-amber-50 p-3 rounded-xl border border-amber-200 italic text-amber-600";
+                    if(phase === 'Phase 1' && kitState.status !== 'Available') overrideMessages.push(`${kitId} at ${kitState.location}`);
+                    if(phase === 'Phase 4' && kitState.status !== 'Deployed') overrideMessages.push(`${kitId} in Warehouse`);
+                    else if(phase === 'Phase 4' && kitState.location !== business) overrideMessages.push(`${kitId} at ${kitState.location}`);
+                }
+
+                const recipe = masterKitTypes.find(t => t.type_name === kitMaster.kit_type);
+                let itemsHTML = '';
+                if(recipe) {
+                    itemsHTML = recipe.checklist_items.split(',').map(i => {
+                        const cleanItem = i.trim();
+                        return `
+                        <label class="flex items-center space-x-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:bg-blue-50 transition">
+                            <input type="checkbox" name="kit_item_${kitId}" value="${cleanItem}" class="w-5 h-5 text-blue-600 rounded cursor-pointer">
+                            <span class="font-bold text-slate-700 text-sm">${cleanItem}</span>
+                        </label>`;
+                    }).join('');
+                }
+
+                // --- SMART AUTO-MAPPING LOGIC ---
+                let extraItemsHTML = '';
+                
+                if (recipe && recipe.requires_pairing === true && recipe.paired_with_type) {
+                    const targetType = recipe.paired_with_type; 
+                    
+                    if (phase === 'Phase 1') {
+                        // 1. Cari Target Devices yang sedang berada di Merchant ini
+                        const deployedAtBusiness = masterKitsData.filter(k => 
+                            k.kit_type === targetType && 
+                            globalKitMap.has(k.kit_id) && 
+                            globalKitMap.get(k.kit_id).location === business &&
+                            globalKitMap.get(k.kit_id).status === 'Deployed'
+                        );
+
+                        // 2. Cari Target Devices yang masih Available
+                        const availablePairs = masterKitsData.filter(k => 
+                            k.kit_type === targetType && 
+                            k.area_name === document.getElementById('input-area').value && 
+                            (!globalKitMap.has(k.kit_id) || globalKitMap.get(k.kit_id).status === 'Available')
+                        );
+                        
+                        // Cek device Jomblo yang belum dipinang oleh iterasi Mono sebelumnya
+                        const availableOrphans = deployedAtBusiness.filter(k => !usedOrphans.has(k.kit_id));
+                        
+                        let autoSelectedId = "STANDALONE"; 
+                        let autoLabel = "";
+
+                        if (availableOrphans.length > 0) {
+                            autoSelectedId = availableOrphans[0].kit_id;
+                            usedOrphans.add(autoSelectedId); // Tandai sudah dipakai
+                            autoLabel = `<div class="mb-2 text-[10px] text-blue-600 font-bold italic bg-blue-50 p-2 rounded border border-blue-200"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Auto-assigned to existing device at location</div>`;
+                        } else if (deployedAtBusiness.length > 0) {
+                            autoLabel = `<div class="mb-2 text-[10px] text-slate-500 font-bold italic bg-slate-50 p-2 rounded border border-slate-200"><i class="fa-solid fa-circle-info mr-1"></i> All local devices paired. Defaulting to Standalone.</div>`;
+                        }
+
+                        let opts = `<option value="">-- Select Pairing Option --</option>`;
+                        opts += `<option value="STANDALONE" ${autoSelectedId === 'STANDALONE' ? 'selected' : ''}>No Pairing (Deploy as Standalone)</option>`;
+
+                        if (deployedAtBusiness.length > 0) {
+                            opts += `<optgroup label="Existing Device at Merchant">`;
+                            deployedAtBusiness.forEach(m => {
+                                const isSelected = autoSelectedId === m.kit_id ? 'selected' : '';
+                                opts += `<option value="${m.kit_id}" ${isSelected}>${m.kit_id} (Currently at ${business})</option>`;
+                            });
+                            opts += `</optgroup>`;
+                        }
+
+                        if (availablePairs.length > 0) {
+                            opts += `<optgroup label="Available in Warehouse">`;
+                            availablePairs.forEach(m => opts += `<option value="${m.kit_id}">${m.kit_id} (From Warehouse)</option>`);
+                            opts += `</optgroup>`;
+                        }
+                        
+                        extraItemsHTML = `
+                            <div class="mt-4 p-4 bg-slate-50 border border-slate-300 rounded-xl shadow-inner">
+                                <label class="block text-[10px] font-black text-slate-700 uppercase mb-2 tracking-widest">
+                                    <i class="fa-solid fa-link mr-1"></i> Action: Pair with ${targetType}
+                                </label>
+                                ${autoLabel}
+                                <select id="paired-device-${kitId}" class="w-full p-3 rounded-xl border border-slate-300 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 bg-white" required>
+                                    ${opts}
+                                </select>
+                            </div>
+                        `;
+                    } else if (phase === 'Phase 4') {
+                        const deployedPairs = masterKitsData.filter(k => k.kit_type === targetType && globalKitMap.get(k.kit_id)?.location === business);
+                        if (deployedPairs.length > 0) {
+                            const pairedId = deployedPairs[0].kit_id;
+                            extraItemsHTML = `
+                                <div class="mt-4 p-4 bg-slate-50 border border-slate-300 rounded-xl flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <label class="block text-[10px] font-black text-slate-600 uppercase mb-1 tracking-widest">
+                                            <i class="fa-solid fa-link mr-1"></i> Paired ${targetType} (Auto)
+                                        </label>
+                                        <span class="font-black text-base text-slate-800">${pairedId}</span>
+                                    </div>
+                                    <i class="fa-solid fa-circle-check text-green-600 text-xl"></i>
+                                    <input type="hidden" id="paired-device-${kitId}" value="${pairedId}">
+                                </div>
+                            `;
+                        } else {
+                            extraItemsHTML = `<div class="mt-4 p-3 bg-red-50 text-[10px] text-red-600 font-bold italic rounded-xl border border-red-200"><i class="fa-solid fa-triangle-exclamation mr-1"></i> No paired ${targetType} detected here.</div>`;
+                        }
+                    }
+                }
+
+                const badge = getKitBadge(kitMaster.kit_type);
+                const textColor = badge.colorClass.split(' ')[1]; 
+
+                checklistHTML += `
+                    <div class="mb-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
+                        <h4 class="text-[10px] font-black uppercase tracking-widest mb-3 border-b border-slate-100 pb-2 flex items-center ${textColor}">
+                            ${badge.icon} <span class="mr-1">${kitId}</span> 
+                            <span class="opacity-60 font-bold">(${kitMaster.kit_type})</span>
+                        </h4>
+                        <div class="space-y-2">
+                            ${itemsHTML}
+                        </div>
+                        ${extraItemsHTML}
+                    </div>
+                `;
+            }
+
+            if(overrideMessages.length > 0) {
+                errLabel.innerText = `OVERRIDE MODE: ` + overrideMessages.join(', ');
+                errLabel.classList.remove('hidden');
+            }
+
+            document.getElementById('kit-type-label').innerText = `${selectedKits.length} Kits Selected`;
+            document.getElementById('checklist-items').innerHTML = checklistHTML;
+            document.getElementById('field-checklist').classList.remove('hidden');
+        }
+           
+        function getGPS() {
+            const gpsLabel = document.getElementById('gps-status'); const gpsInput = document.getElementById('input-gps');
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (p) => { gpsInput.value = `${p.coords.latitude}, ${p.coords.longitude}`; gpsLabel.innerHTML = `<span class="text-green-600">Location Locked</span>`; },
+                    (e) => { gpsLabel.innerHTML = `<span class="text-red-500 font-bold italic">GPS Denied!</span>`; }, { enableHighAccuracy: true }
+                );
+            }
+        }
+
+        async function compressImageToBase64(file) {
+            return new Promise((res) => {
+                const reader = new FileReader(); reader.readAsDataURL(file);
+                reader.onload = e => {
+                    const img = new Image(); img.src = e.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas'); let w = img.width, h = img.height; const max = 1024;
+                        if(w>h && w>max){h*=max/w; w=max;} else if(h>max){w*=max/h; h=max;}
+                        canvas.width = w; canvas.height = h; canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        res(canvas.toDataURL('image/jpeg', 0.6));
+                    };
+                };
+            });
+        }
+
+        function showToast(msg, isWarning = false) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.className = `fixed top-10 left-1/2 transform -translate-x-1/2 px-8 py-5 rounded-full shadow-2xl transition-all pointer-events-none z-50 font-black text-xs uppercase tracking-widest ${isWarning ? 'bg-amber-500 text-white border border-amber-600' : 'bg-slate-900 text-white border border-slate-700'}`;
+            t.classList.remove('opacity-0'); setTimeout(() => t.classList.add('opacity-0'), 4000);
+        }
+
+        function saveToOfflineQueue(payload) {
+            let queue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
+            queue.push(payload);
+            localStorage.setItem('runner_sync_queue', JSON.stringify(queue));
+            updateSyncUI();
+        }
+
+        function updateSyncUI() {
+            let queue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
+            const banner = document.getElementById('sync-banner');
+            if(queue.length > 0) {
+                banner.classList.remove('hidden-view'); document.getElementById('sync-count').innerText = queue.length;
+            } else banner.classList.add('hidden-view');
+        }
+
+        async function processSinglePayload(p) {
+            let photoUrl = null;
+            if (p.photo_b64) {
+                const res = await fetch(p.photo_b64); const blob = await res.blob();
+                const fName = `${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
+                const { error: upErr } = await db.storage.from('proofs').upload(fName, blob);
+                if (upErr) throw upErr;
+                photoUrl = db.storage.from('proofs').getPublicUrl(fName).data.publicUrl;
+            }
+
+            const { error: dbErr } = await db.from('transactions').insert([{
+                sdr_name: p.sdr_name, area: p.area, phase: p.phase, runner_name: p.runner_name, business_name: p.business_name, 
+                kit_id: p.kit_id, kit_type: p.kit_type, sd_qty: p.sd_qty, sd_uploaded: p.sd_uploaded,
+                gps_location: p.gps_location, device_condition: p.device_condition, missing_or_issue: p.missing_or_issue, 
+                proof_photo: photoUrl, created_at: p.created_at, other_item: p.other_item, pickup_time: p.pickup_time, drop_off_time: p.drop_off_time
+            }]);
+            
+            if (dbErr) throw dbErr;
+
+            if (p.device_condition === 'Damaged' && p.kit_id) {
+                await db.from('master_kits').update({ current_status: 'Damaged' }).eq('kit_id', p.kit_id);
+            }
+        }
+
+        async function syncOfflineQueue() {
+            if (!navigator.onLine) { alert("You are still offline. Please find a better signal."); return; }
+            let queue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
+            if (queue.length === 0) return;
+
+            // --- FILTER SANITASI CACHE ---
+            // Bersihkan data sampah dari cache lama HP sebelum dikirim ke database
+            queue = queue.map(q => {
+                if (q.phase === 'Phase 2' || q.phase === 'Phase 3') {
+                    q.kit_id = null;
+                    q.kit_type = null;
+                    q.device_condition = null; // Phase 2 & 3 tidak butuh kondisi device
+                }
+                return q;
+            });
+            // -----------------------------
+
+            const btn = document.getElementById('btn-sync-now');
+            btn.innerHTML = `<div class="spinner mr-1"></div> Syncing...`; btn.disabled = true;
+
+            let remainingQueue = [];
+            for (let i = 0; i < queue.length; i++) {
+                try { await processSinglePayload(queue[i]); } catch (e) { remainingQueue.push(queue[i]); }
+            }
+
+            localStorage.setItem('runner_sync_queue', JSON.stringify(remainingQueue));
+            updateSyncUI(); fetchData();
+            btn.innerHTML = `<i class="fa-solid fa-rotate mr-1"></i> Sync`; btn.disabled = false;
+            
+            if (remainingQueue.length === 0) showToast("All Offline Data Synced!");
+            else showToast(`${remainingQueue.length} items failed to sync. Try again later.`, true);
+        }
+
+        window.addEventListener('online', syncOfflineQueue);
+
+        document.getElementById('runnerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if(!document.getElementById('input-gps').value) { alert("GPS Required! Please click Refresh GPS."); return; }
+            
+            const phase = document.getElementById('input-phase').value;
+            const business = document.getElementById('input-business').value;
+            if (!business) { alert("Merchant Location is required!"); return; }
+
+            let hasKits = selectedKits.length > 0;
+            let condition = document.getElementById('input-condition').value || null;
+            let match = document.getElementById('input-match').value || null;
+            let sdQtyRaw = document.getElementById('input-sd').value;
+            let sdUploadVal = document.getElementById('input-sdupload').value || null;
+            let photoCount = document.getElementById('input-photo').files.length;
+            let sdrNameVal = document.getElementById('input-sdr-name').value || null;
+
+            if (photoCount === 0) { alert("Visual Proof (Photo) is required!"); return; }
+
+            if (phase === 'Phase 1') {
+                if (!sdrNameVal) { alert("SDR Name is required for Phase 1!"); return; } 
+                if (!hasKits) { alert("At least one Kit ID is required!"); return; }
+                if (!condition) { alert("Physical Integrity (Good/Damaged) is required!"); return; }
+                if (!match) { alert("Audit Checklist Match (Yes/No) is required!"); return; }
+            } else if (phase === 'Phase 2') {
+                if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
+            } else if (phase === 'Phase 3') {
+                if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
+                if (!sdUploadVal) { alert("Please select 'Begin SD Upload Now' option (Yes/No)!"); return; }
+            } else if (phase === 'Phase 4') {
+                if (!hasKits) { alert("At least one Kit ID is required!"); return; }
+                if (!condition) { alert("Physical Integrity (Good/Damaged) is required!"); return; }
+                if (!match) { alert("Audit Checklist Match (Yes/No) is required!"); return; }
+                if (!sdUploadVal) { alert("Please select 'Begin SD Upload Now' option (Yes/No)!"); return; }
+            }
+
+            const btnLoad = document.getElementById('btn-loading'); 
+            btnLoad.classList.remove('hidden'); document.getElementById('btn-submit').disabled = true;
+
+            let sdUploadCount = 0;
+            if (sdUploadVal === 'Yes') {
+                if (phase === 'Phase 3') sdUploadCount = parseInt(sdQtyRaw) || 0;
+                else if (phase === 'Phase 4') sdUploadCount = 1;
+            }
+
+            let sdQtyParsed = sdQtyRaw ? parseInt(sdQtyRaw) : null;
+
+            try {
+                let photoBase64 = null; 
+                const fileInput = document.getElementById('input-photo');
+                if (fileInput.files.length > 0) photoBase64 = await compressImageToBase64(fileInput.files[0]);
+
+                const basePayload = {
+                    sdr_name: phase === 'Phase 1' ? sdrNameVal : null,
+                    area: document.getElementById('input-area').value, phase: phase, runner_name: document.getElementById('input-runner').value,
+                    business_name: business, sd_qty: sdQtyParsed, sd_uploaded: sdUploadCount, gps_location: document.getElementById('input-gps').value, 
+                    device_condition: condition, missing_or_issue: document.getElementById('input-issue').value, 
+                    photo_b64: photoBase64, created_at: new Date().toISOString(), other_item: document.getElementById('input-other-item').value, 
+                    pickup_time: document.getElementById('input-pickup-time').value, drop_off_time: document.getElementById('input-dropoff-time').value 
+                };
+
+                let payloadsToProcess = [];
+
+                if (selectedKits.length > 0 && (phase === 'Phase 1' || phase === 'Phase 4')) {
+                    for (let i = 0; i < selectedKits.length; i++) {
+                        const kId = selectedKits[i];
+                        const kMaster = masterKitsData.find(k => k.kit_id === kId);
+                        
+                        // Menangkap Info Pairing untuk dimasukkan ke Log UI nanti via kolom 'other_item'
+                        let pairStatusText = "";
+                        const pairedEl = document.getElementById(`paired-device-${kId}`);
+                        if (pairedEl) {
+                            if (pairedEl.value === 'STANDALONE' || !pairedEl.value) {
+                                pairStatusText = "STANDALONE";
+                            } else {
+                                pairStatusText = `Paired with ${pairedEl.value}`;
+                            }
+                        }
+
+                        // Payload Utama (Misal: Mono)
+                        let mainPayload = {
+                            ...basePayload, 
+                            id: 'local_' + Date.now() + '_' + i, 
+                            kit_id: kId, 
+                            kit_type: kMaster ? kMaster.kit_type : null
+                        };
+
+                        // Inject informasi pairing ke dalam other_item agar bisa dipanggil saat render UI Activity Log
+                        if (pairStatusText) {
+                            mainPayload.other_item = basePayload.other_item ? `${basePayload.other_item} | [${pairStatusText}]` : `[${pairStatusText}]`;
+                        }
+
+                        payloadsToProcess.push(mainPayload);
+
+                        // Payload Kedua (Misal: Wristcam yang dipasangkan otomatis)
+                        if (pairedEl && pairedEl.value && pairedEl.value !== 'STANDALONE') {
+                            const pairedId = pairedEl.value;
+                            const pairedMaster = masterKitsData.find(k => k.kit_id === pairedId);
+                            
+                            payloadsToProcess.push({
+                                ...basePayload,
+                                id: 'local_pair_' + Date.now() + '_' + i,
+                                kit_id: pairedId,
+                                kit_type: pairedMaster ? pairedMaster.kit_type : 'Paired Device',
+                                missing_or_issue: (basePayload.missing_or_issue ? basePayload.missing_or_issue + " | " : "") + `[Auto-Paired with ${kId}]`
+                            });
+                        }
+                    }
+                } else {
+                    payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now(), kit_id: null, kit_type: null });
+                }
+
+                for (const payload of payloadsToProcess) {
+                    if (navigator.onLine) {
+                        try { await processSinglePayload(payload); } catch (uploadError) { saveToOfflineQueue(payload); }
+                    } else saveToOfflineQueue(payload);
+                }
+                
+                showToast(navigator.onLine ? "Data Transmitted Successfully!" : "Saved Offline. Will sync automatically.", !navigator.onLine);
+
+                this.reset(); 
+                document.getElementById('input-sdr-name').value = ""; document.getElementById('input-condition').value = "";
+                document.getElementById('input-match').value = ""; document.getElementById('input-sdupload').value = "";
+                document.getElementById('checklist-items').innerHTML = ""; document.getElementById('input-business').value = ""; 
+                document.getElementById('label-business').innerText = "Select Location..."; document.getElementById('label-business').classList.add('text-slate-400');
+                document.getElementById('input-gps').value = ""; document.getElementById('gps-status').innerHTML = `<span class="font-bold text-red-600 italic uppercase">GPS Required</span>`;
+                document.querySelectorAll('.btn-toggle').forEach(btn => btn.classList.remove('active'));
+                
+                toggleFormFields(); fetchData(); switchTab('dashboard'); 
+
+            } catch (e) { alert("Application Error: " + e.message); } 
+            finally { btnLoad.classList.add('hidden'); document.getElementById('btn-submit').disabled = false; }
+        });
+
+        async function fetchData() {
+            try {
+                let query = db.from('transactions').select('*').order('created_at', { ascending: false }).limit(200); 
+                if(currentUser.role === 'Staff') query = query.eq('runner_name', currentUser.runner_name);
+                globalTransactions = (await query).data || [];
+                
+                const allTrx = (await db.from('transactions').select('kit_id, phase, business_name, created_at').order('created_at', { ascending: false })).data || [];
+                globalKitMap.clear();
+                allTrx.forEach(trx => { 
+                    if(trx.kit_id && !globalKitMap.has(trx.kit_id) && (trx.phase === 'Phase 1' || trx.phase === 'Phase 4')) { 
+                        globalKitMap.set(trx.kit_id, { location: trx.phase === 'Phase 1' ? trx.business_name : 'Warehouse', status: trx.phase === 'Phase 1' ? 'Deployed' : 'Available' }); 
+                    } 
+                });
+
+                let offlineQueue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
+                let offlineTrx = offlineQueue.map(q => ({...q, is_offline: true}));
+                let combinedDisplay = [...offlineTrx, ...globalTransactions].slice(0, 50); 
+
+                document.getElementById('activity-list').innerHTML = combinedDisplay.map(trx => {
+                    // --- ACTIVITY LOG UI ENHANCEMENT (ACTION PLAN) ---
+                    let pairingBadgeHTML = "";
+                    if (trx.phase === 'Phase 1' && trx.other_item) {
+                        if (trx.other_item.includes("Paired with")) {
+                            let match = trx.other_item.match(/Paired with [A-Za-z0-9\-]+/);
+                            if(match) pairingBadgeHTML = `<div class="text-[10px] text-blue-700 bg-blue-100 px-2 py-1 rounded-md border border-blue-200 mt-2 inline-block shadow-sm"><i class="fa-solid fa-link mr-1"></i>${match[0]}</div>`;
+                        } else if (trx.other_item.includes("STANDALONE")) {
+                            pairingBadgeHTML = `<div class="text-[10px] text-slate-500 bg-slate-100 px-2 py-1 rounded-md border border-slate-300 mt-2 inline-block shadow-sm"><i class="fa-solid fa-unlink mr-1"></i>STANDALONE</div>`;
+                        }
+                    }
+
+                    return `
+                    <li class="p-6 flex justify-between items-center hover:bg-slate-50 ${trx.is_offline ? 'bg-amber-50/50' : ''}">
+                        <div class="space-y-1">
+                            <p class="font-black text-slate-800 text-base">${trx.business_name} ${trx.is_offline ? '<span class="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded ml-2 shadow-sm uppercase tracking-widest"><i class="fa-solid fa-clock mr-1"></i>Pending</span>' : ''}</p>
+                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-tighter">${trx.runner_name} &bull; ${trx.kit_id || trx.sd_qty+' SD'}</p>
+                            ${pairingBadgeHTML}
+                        </div>
+                        <span class="text-[10px] font-black bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 uppercase tracking-widest">${trx.phase}</span>
+                    </li>`
+                }).join('');
+                
+            } catch (e) { console.error("Offline: Using cache data.", e); }
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
