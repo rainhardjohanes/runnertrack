@@ -138,14 +138,11 @@
                     <input type="number" id="input-sd" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xl font-black outline-none text-blue-700" placeholder="0">
                 </div>
 
-                <div id="field-sdupload" class="hidden bg-amber-50 p-6 rounded-[2rem] border border-amber-200">
-                    <label class="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-3">Begin SD Upload Now? *</label>
-                    <input type="hidden" id="input-sdupload">
-                    <div class="flex gap-3">
-                        <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-amber-300 rounded-2xl font-bold text-amber-700" onclick="setBtn(this, 'input-sdupload', 'Yes')">YES</button>
-                        <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-amber-300 rounded-2xl font-bold text-amber-700" onclick="setBtn(this, 'input-sdupload', 'No')">NO</button>
-                    </div>
+                <div id="field-sd-upload-qty" class="hidden bg-amber-50 p-6 rounded-[2rem] border border-amber-200 mt-4">
+                    <label class="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2">How many SD to Upload? *</label>
+                    <input type="number" id="input-sd-uploaded-qty" class="w-full p-4 bg-white border border-amber-300 rounded-2xl text-xl font-black outline-none text-amber-800" placeholder="0">
                 </div>
+                
 
                 <div id="field-commons" class="hidden space-y-6">
                     <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
@@ -350,7 +347,7 @@
             let filtered = masterKitsData.filter(k => {
                 const areaMatch = !area || k.area_name === area;
                 const searchMatch = k.kit_id.includes(search);
-                const conditionMatch = k.current_status === 'Good'; 
+                const conditionMatch = (phase === 'Phase 4') ? true : (k.current_status === 'Good');
                 
                 const kitState = globalKitMap.get(k.kit_id) || { status: 'Available', location: 'Warehouse' };
                 let phaseMatch = true;
@@ -463,21 +460,17 @@
             if(tabName === 'form' && !document.getElementById('input-gps').value) getGPS();
         }
 
-        function toggleFormFields() {
+function toggleFormFields() {
             const phase = document.getElementById('input-phase').value;
-            ['field-kit', 'field-checklist', 'field-sd', 'field-commons', 'field-sdupload', 'field-sdr'].forEach(id => {
+            ['field-kit', 'field-checklist', 'field-sd', 'field-commons', 'field-sd-upload-qty', 'field-sdr'].forEach(id => {
                 const el = document.getElementById(id);
                 if(el) el.classList.add('hidden');
             });
             
-            // --- RESET STATE KEBOCORAN (LEAKAGE) ---
-            // Pastikan input tersembunyi benar-benar kosong saat ganti fase
             document.getElementById('input-condition').value = "";
             document.getElementById('input-match').value = "";
-            document.getElementById('input-sdupload').value = "";
-            // Hilangkan warna biru/aktif pada tombol toggle YES/NO/GOOD/DAMAGED
+            document.getElementById('input-sd-uploaded-qty').value = ""; // Reset qty
             document.querySelectorAll('.btn-toggle').forEach(btn => btn.classList.remove('active'));
-            // ---------------------------------------
 
             const currentTime = new Date().toTimeString().slice(0,5); 
             const pickUpInput = document.getElementById('input-pickup-time');
@@ -491,15 +484,19 @@
                 pickUpInput.value = currentTime; dropOffInput.value = "";        
             } 
             else if (phase === 'Phase 3' || phase === 'Phase 4') { 
-                if(phase === 'Phase 3') { document.getElementById('field-sd').classList.remove('hidden'); document.getElementById('label-sd').innerText = "SD Collected Quantity *"; }
+                if(phase === 'Phase 3') { 
+                    document.getElementById('field-sd').classList.remove('hidden'); 
+                    document.getElementById('label-sd').innerText = "SD Collected Quantity *"; 
+                    document.getElementById('field-sd-upload-qty').classList.remove('hidden'); // Munculkan input qty upload
+                }
                 if(phase === 'Phase 4') { document.getElementById('field-kit').classList.remove('hidden'); }
                 
-                document.getElementById('field-sdupload').classList.remove('hidden'); document.getElementById('field-commons').classList.remove('hidden');
+                document.getElementById('field-commons').classList.remove('hidden');
                 pickUpInput.value = ""; dropOffInput.value = currentTime; 
             }
             resetKit();
         }
-
+        
         function validateKit() {
             const phase = document.getElementById('input-phase').value;
             const business = document.getElementById('input-business').value;
@@ -655,6 +652,20 @@
                 const badge = getKitBadge(kitMaster.kit_type);
                 const textColor = badge.colorClass.split(' ')[1]; 
 
+                let uploadToggleHTML = '';
+                if (phase === 'Phase 4') {
+                    uploadToggleHTML = `
+                        <div class="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                            <label class="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2">Apakah SD Kit ini di-Upload? *</label>
+                            <input type="hidden" id="upload-status-${kitId}">
+                            <div class="flex gap-3">
+                                <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-amber-300 rounded-xl font-bold text-amber-700 text-xs" onclick="setBtn(this, 'upload-status-${kitId}', 'Yes')">YES</button>
+                                <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-amber-300 rounded-xl font-bold text-amber-700 text-xs" onclick="setBtn(this, 'upload-status-${kitId}', 'No')">NO</button>
+                            </div>
+                        </div>
+                    `;
+                }
+
                 checklistHTML += `
                     <div class="mb-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
                         <h4 class="text-[10px] font-black uppercase tracking-widest mb-3 border-b border-slate-100 pb-2 flex items-center ${textColor}">
@@ -665,6 +676,7 @@
                             ${itemsHTML}
                         </div>
                         ${extraItemsHTML}
+                        ${uploadToggleHTML} 
                     </div>
                 `;
             }
@@ -745,8 +757,23 @@
             
             if (dbErr) throw dbErr;
 
-            if (p.device_condition === 'Damaged' && p.kit_id) {
-                await db.from('master_kits').update({ current_status: 'Damaged' }).eq('kit_id', p.kit_id);
+            // --- UPDATE OTOMATIS TABEL MASTER KITS ---
+            if (p.kit_id) {
+                let updateFields = {};
+                
+                if (p.phase === 'Phase 1') {
+                    updateFields = { status_deployment: 'Deployed', last_location: p.business_name };
+                } else if (p.phase === 'Phase 4') {
+                    updateFields = { status_deployment: 'Available', last_location: 'Warehouse' };
+                }
+
+                if (p.device_condition === 'Damaged') {
+                    updateFields.current_status = 'Damaged';
+                }
+
+                if (Object.keys(updateFields).length > 0) {
+                    await db.from('master_kits').update(updateFields).eq('kit_id', p.kit_id);
+                }
             }
         }
 
@@ -785,7 +812,7 @@
 
         window.addEventListener('online', syncOfflineQueue);
 
-        document.getElementById('runnerForm').addEventListener('submit', async function(e) {
+document.getElementById('runnerForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
             if(!document.getElementById('input-gps').value) { alert("GPS Required! Please click Refresh GPS."); return; }
@@ -798,39 +825,40 @@
             let condition = document.getElementById('input-condition').value || null;
             let match = document.getElementById('input-match').value || null;
             let sdQtyRaw = document.getElementById('input-sd').value;
-            let sdUploadVal = document.getElementById('input-sdupload').value || null;
+            let uploadedQtyRaw = document.getElementById('input-sd-uploaded-qty') ? document.getElementById('input-sd-uploaded-qty').value : "";
             let photoCount = document.getElementById('input-photo').files.length;
             let sdrNameVal = document.getElementById('input-sdr-name').value || null;
 
             if (photoCount === 0) { alert("Visual Proof (Photo) is required!"); return; }
 
+            // VALIDASI
             if (phase === 'Phase 1') {
                 if (!sdrNameVal) { alert("SDR Name is required for Phase 1!"); return; } 
                 if (!hasKits) { alert("At least one Kit ID is required!"); return; }
                 if (!condition) { alert("Physical Integrity (Good/Damaged) is required!"); return; }
                 if (!match) { alert("Audit Checklist Match (Yes/No) is required!"); return; }
             } else if (phase === 'Phase 2') {
-                if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
+                if (sdQtyRaw === "") { alert("SD Count quantity is required!"); return; }
             } else if (phase === 'Phase 3') {
-                if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
-                if (!sdUploadVal) { alert("Please select 'Begin SD Upload Now' option (Yes/No)!"); return; }
+                if (sdQtyRaw === "") { alert("SD Count quantity is required!"); return; }
+                if (uploadedQtyRaw === "") { alert("Uploaded SD quantity is required! (Isi 0 jika tidak ada yang di-upload)"); return; }
+                if (parseInt(uploadedQtyRaw) > parseInt(sdQtyRaw)) { alert("Jumlah Upload tidak boleh lebih besar dari Total SD!"); return; }
             } else if (phase === 'Phase 4') {
                 if (!hasKits) { alert("At least one Kit ID is required!"); return; }
                 if (!condition) { alert("Physical Integrity (Good/Damaged) is required!"); return; }
                 if (!match) { alert("Audit Checklist Match (Yes/No) is required!"); return; }
-                if (!sdUploadVal) { alert("Please select 'Begin SD Upload Now' option (Yes/No)!"); return; }
+                // Validasi setiap kit apakah sudah dipilih YES/NO
+                for(let kitId of selectedKits) {
+                    let btnStatus = document.getElementById('upload-status-' + kitId);
+                    if (!btnStatus || !btnStatus.value) {
+                        alert("Pilih status Upload SD untuk Kit " + kitId + " (YES/NO)!");
+                        return;
+                    }
+                }
             }
 
             const btnLoad = document.getElementById('btn-loading'); 
             btnLoad.classList.remove('hidden'); document.getElementById('btn-submit').disabled = true;
-
-            let sdUploadCount = 0;
-            if (sdUploadVal === 'Yes') {
-                if (phase === 'Phase 3') sdUploadCount = parseInt(sdQtyRaw) || 0;
-                else if (phase === 'Phase 4') sdUploadCount = 1;
-            }
-
-            let sdQtyParsed = sdQtyRaw ? parseInt(sdQtyRaw) : null;
 
             try {
                 let photoBase64 = null; 
@@ -840,7 +868,7 @@
                 const basePayload = {
                     sdr_name: phase === 'Phase 1' ? sdrNameVal : null,
                     area: document.getElementById('input-area').value, phase: phase, runner_name: document.getElementById('input-runner').value,
-                    business_name: business, sd_qty: sdQtyParsed, sd_uploaded: sdUploadCount, gps_location: document.getElementById('input-gps').value, 
+                    business_name: business, gps_location: document.getElementById('input-gps').value, 
                     device_condition: condition, missing_or_issue: document.getElementById('input-issue').value, 
                     photo_b64: photoBase64, created_at: new Date().toISOString(), other_item: document.getElementById('input-other-item').value, 
                     pickup_time: document.getElementById('input-pickup-time').value, drop_off_time: document.getElementById('input-dropoff-time').value 
@@ -848,53 +876,79 @@
 
                 let payloadsToProcess = [];
 
-                if (selectedKits.length > 0 && (phase === 'Phase 1' || phase === 'Phase 4')) {
+                // --- LOGIC PEMISAHAN LOG PHASE 3 ---
+                if (phase === 'Phase 3') {
+                    let totalSd = parseInt(sdQtyRaw) || 0;
+                    let upSd = parseInt(uploadedQtyRaw) || 0;
+                    let notUpSd = totalSd - upSd;
+
+                    // Log 1: SD yang sukses diupload
+                    if (upSd > 0) {
+                        payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_up', sd_qty: upSd, sd_uploaded: upSd, kit_id: null, kit_type: null });
+                    }
+                    // Log 2: SD yang ditarik tapi belum diupload
+                    if (notUpSd > 0) {
+                        payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_noup', sd_qty: notUpSd, sd_uploaded: 0, kit_id: null, kit_type: null });
+                    }
+                    if (upSd === 0 && notUpSd === 0) {
+                        payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_zero', sd_qty: 0, sd_uploaded: 0, kit_id: null, kit_type: null });
+                    }
+                } 
+                // --- LOGIC PHASE 1 & PHASE 4 (PER KIT) ---
+                else if (selectedKits.length > 0 && (phase === 'Phase 1' || phase === 'Phase 4')) {
                     for (let i = 0; i < selectedKits.length; i++) {
                         const kId = selectedKits[i];
                         const kMaster = masterKitsData.find(k => k.kit_id === kId);
                         
-                        // Menangkap Info Pairing untuk dimasukkan ke Log UI nanti via kolom 'other_item'
                         let pairStatusText = "";
                         const pairedEl = document.getElementById(`paired-device-${kId}`);
                         if (pairedEl) {
-                            if (pairedEl.value === 'STANDALONE' || !pairedEl.value) {
-                                pairStatusText = "STANDALONE";
-                            } else {
-                                pairStatusText = `Paired with ${pairedEl.value}`;
-                            }
+                            if (pairedEl.value === 'STANDALONE' || !pairedEl.value) pairStatusText = "STANDALONE";
+                            else pairStatusText = `Paired with ${pairedEl.value}`;
                         }
 
-                        // Payload Utama (Misal: Mono)
+                        // Cek status upload spesifik untuk kit ini (khusus phase 4)
+                        let kitUploadedCount = 0;
+                        if (phase === 'Phase 4') {
+                            let isUp = document.getElementById('upload-status-' + kId).value;
+                            kitUploadedCount = (isUp === 'Yes') ? 1 : 0;
+                        }
+
                         let mainPayload = {
                             ...basePayload, 
                             id: 'local_' + Date.now() + '_' + i, 
                             kit_id: kId, 
-                            kit_type: kMaster ? kMaster.kit_type : null
+                            kit_type: kMaster ? kMaster.kit_type : null,
+                            sd_qty: null,
+                            sd_uploaded: kitUploadedCount // Terisi sesuai tombol di kotak kit
                         };
 
-                        // Inject informasi pairing ke dalam other_item agar bisa dipanggil saat render UI Activity Log
                         if (pairStatusText) {
                             mainPayload.other_item = basePayload.other_item ? `${basePayload.other_item} | [${pairStatusText}]` : `[${pairStatusText}]`;
                         }
 
                         payloadsToProcess.push(mainPayload);
 
-                        // Payload Kedua (Misal: Wristcam yang dipasangkan otomatis)
+                        // Duplikasi payload jika ada auto-pairing (e.g., Wristcam)
                         if (pairedEl && pairedEl.value && pairedEl.value !== 'STANDALONE') {
                             const pairedId = pairedEl.value;
                             const pairedMaster = masterKitsData.find(k => k.kit_id === pairedId);
-                            
                             payloadsToProcess.push({
                                 ...basePayload,
                                 id: 'local_pair_' + Date.now() + '_' + i,
                                 kit_id: pairedId,
                                 kit_type: pairedMaster ? pairedMaster.kit_type : 'Paired Device',
+                                sd_qty: null,
+                                sd_uploaded: kitUploadedCount, // Mengikuti status induknya
                                 missing_or_issue: (basePayload.missing_or_issue ? basePayload.missing_or_issue + " | " : "") + `[Auto-Paired with ${kId}]`
                             });
                         }
                     }
-                } else {
-                    payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now(), kit_id: null, kit_type: null });
+                } 
+                // --- LOGIC PHASE 2 ---
+                else {
+                    let phase2SdQty = phase === 'Phase 2' ? parseInt(sdQtyRaw) : null;
+                    payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now(), kit_id: null, kit_type: null, sd_qty: phase2SdQty, sd_uploaded: 0 });
                 }
 
                 for (const payload of payloadsToProcess) {
@@ -907,7 +961,8 @@
 
                 this.reset(); 
                 document.getElementById('input-sdr-name').value = ""; document.getElementById('input-condition').value = "";
-                document.getElementById('input-match').value = ""; document.getElementById('input-sdupload').value = "";
+                document.getElementById('input-match').value = ""; 
+                if(document.getElementById('input-sd-uploaded-qty')) document.getElementById('input-sd-uploaded-qty').value = "";
                 document.getElementById('checklist-items').innerHTML = ""; document.getElementById('input-business').value = ""; 
                 document.getElementById('label-business').innerText = "Select Location..."; document.getElementById('label-business').classList.add('text-slate-400');
                 document.getElementById('input-gps').value = ""; document.getElementById('gps-status').innerHTML = `<span class="font-bold text-red-600 italic uppercase">GPS Required</span>`;
@@ -918,20 +973,25 @@
             } catch (e) { alert("Application Error: " + e.message); } 
             finally { btnLoad.classList.add('hidden'); document.getElementById('btn-submit').disabled = false; }
         });
-
+        
+        
         async function fetchData() {
             try {
                 let query = db.from('transactions').select('*').order('created_at', { ascending: false }).limit(200); 
                 if(currentUser.role === 'Staff') query = query.eq('runner_name', currentUser.runner_name);
                 globalTransactions = (await query).data || [];
                 
-                const allTrx = (await db.from('transactions').select('kit_id, phase, business_name, created_at').order('created_at', { ascending: false })).data || [];
+                // Membaca status langsung dari master_kits agar sinkron dengan Admin
+                const { data: kitStatusData } = await db.from('master_kits').select('kit_id, last_location, status_deployment');
                 globalKitMap.clear();
-                allTrx.forEach(trx => { 
-                    if(trx.kit_id && !globalKitMap.has(trx.kit_id) && (trx.phase === 'Phase 1' || trx.phase === 'Phase 4')) { 
-                        globalKitMap.set(trx.kit_id, { location: trx.phase === 'Phase 1' ? trx.business_name : 'Warehouse', status: trx.phase === 'Phase 1' ? 'Deployed' : 'Available' }); 
-                    } 
-                });
+                if (kitStatusData) {
+                    kitStatusData.forEach(k => {
+                        globalKitMap.set(k.kit_id, { 
+                            location: k.last_location || 'Warehouse', 
+                            status: k.status_deployment || 'Available' 
+                        });
+                    });
+                }
 
                 let offlineQueue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
                 let offlineTrx = offlineQueue.map(q => ({...q, is_offline: true}));
