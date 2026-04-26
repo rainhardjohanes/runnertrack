@@ -337,40 +337,48 @@
             return { icon: '<i class="fa-solid fa-box mr-1"></i>', colorClass: 'bg-slate-100 text-slate-600 border-slate-200' };
         }
 
-        function renderKitList() {
-            const area = document.getElementById('input-area').value;
+function renderKitList() {
             const phase = document.getElementById('input-phase').value;
             const search = document.getElementById('search-kit').value.toUpperCase();
             const business = document.getElementById('input-business').value;
             const listEl = document.getElementById('list-kit');
             
             let filtered = masterKitsData.filter(k => {
-                const areaMatch = !area || k.area_name === area;
-                const searchMatch = k.kit_id.includes(search);
-                const conditionMatch = (phase === 'Phase 4') ? true : (k.current_status === 'Good');
-                
+                const searchMatch = search === '' || k.kit_id.toUpperCase().includes(search);
                 const kitState = globalKitMap.get(k.kit_id) || { status: 'Available', location: 'Warehouse' };
-                let phaseMatch = true;
-                const isAdmin = currentUser.role.toLowerCase() === 'admin';
                 
-                if (!isAdmin) {
-                    if (phase === 'Phase 1') phaseMatch = (kitState.status === 'Available');
-                    if (phase === 'Phase 4') phaseMatch = (kitState.status === 'Deployed' && kitState.location === business);
+                if (phase === 'Phase 4') {
+                    const dbLoc = (kitState.location || '').toLowerCase().trim();
+                    const inputLoc = (business || '').toLowerCase().trim();
+                    
+                    // Super fleksibel: Cocokkan nama lokasi secara menyilang agar kebal typo atau selisih format
+                    const locationMatch = (dbLoc === inputLoc) || dbLoc.includes(inputLoc) || inputLoc.includes(dbLoc);
+                    
+                    return locationMatch && searchMatch;
                 }
-
-                return areaMatch && searchMatch && conditionMatch && phaseMatch;
+                
+                // --- Logika untuk Phase 1 ---
+                const area = document.getElementById('input-area').value;
+                const areaMatch = (!area || k.area_name === area);
+                const isGood = (k.current_status === 'Good');
+                const isAvailable = (currentUser.role.toLowerCase() === 'admin') || (kitState.status === 'Available');
+                
+                return areaMatch && isGood && isAvailable && searchMatch;
             });
 
-            if(filtered.length === 0) listEl.innerHTML = `<li class="p-10 text-center text-slate-400 text-xs italic">No eligible Good kits found for this location.</li>`;
-            else listEl.innerHTML = filtered.map(k => {
-                const badge = getKitBadge(k.kit_type);
-                return `<li class="p-5 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition" onclick="selectKit('${k.kit_id}')">
-                    <span class="font-black text-slate-800">${k.kit_id}</span>
-                    <span class="text-[9px] font-black uppercase px-2 py-1 rounded border shadow-sm flex items-center ${badge.colorClass}">${badge.icon} ${k.kit_type}</span>
-                </li>`;
-            }).join('');        
+            if(filtered.length === 0) {
+                listEl.innerHTML = `<li class="p-8 text-center text-slate-400 text-xs italic">Tidak ada barang yang terdeteksi di merchant ini.</li>`;
+            } else {
+                listEl.innerHTML = filtered.map(k => {
+                    const badge = getKitBadge(k.kit_type);
+                    return `<li class="p-5 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition border-b" onclick="selectKit('${k.kit_id}')">
+                        <span class="font-black text-slate-800">${k.kit_id}</span>
+                        <span class="text-[9px] font-black uppercase px-2 py-1 rounded border shadow-sm flex items-center ${badge.colorClass}">${badge.icon} ${k.kit_type}</span>
+                    </li>`;
+                }).join('');        
+            }
         }
-
+                
         function selectBusiness(name) {
             document.getElementById('input-business').value = name; document.getElementById('label-business').innerText = name;
             document.getElementById('label-business').classList.replace('text-slate-400', 'text-slate-800');
@@ -533,13 +541,15 @@ function toggleFormFields() {
                         errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
                     }
                     if(phase === 'Phase 4') {
-                        if(kitState.status !== 'Deployed') { 
-                            errLabel.innerText = `REJECTED: ${kitId} is already in Warehouse.`; 
-                            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
-                        }
-                        if(kitState.location !== business) { 
-                            errLabel.innerText = `REJECTED: ${kitId} belongs to ${kitState.location}.`; 
-                            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                        const dbLoc = (kitState.location || '').toLowerCase().trim();
+                        const inputLoc = (business || '').toLowerCase().trim();
+                        
+                        // JIKA DESYNC: Munculkan pesan peringatan kuning, TAPI izinkan user men-submit
+                        if(dbLoc !== inputLoc && dbLoc !== '') { 
+                            errLabel.innerText = `WARNING: Sistem mencatat kit ini di ${kitState.location}, tapi Anda menariknya dari ${business}. Data akan dikoreksi setelah disubmit.`; 
+                            errLabel.className = "text-[11px] font-bold bg-amber-50 p-3 rounded-xl border border-amber-200 italic text-amber-600 mb-4 block";
+                            errLabel.classList.remove('hidden'); 
+                            // btnSubmit.disabled = true; --> Kita hapus pemblokirannya agar runner tetap bisa kerja!
                         }
                     }
                 } else {
@@ -975,30 +985,35 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
         });
         
         
-        async function fetchData() {
+async function fetchData() {
             try {
-                let query = db.from('transactions').select('*').order('created_at', { ascending: false }).limit(200); 
+                // 1. Ambil data log untuk ditampilkan di UI (limit 50)
+                let query = db.from('transactions').select('*').order('created_at', { ascending: false }).limit(50); 
                 if(currentUser.role === 'Staff') query = query.eq('runner_name', currentUser.runner_name);
                 globalTransactions = (await query).data || [];
                 
-                // Membaca status langsung dari master_kits agar sinkron dengan Admin
-                const { data: kitStatusData } = await db.from('master_kits').select('kit_id, last_location, status_deployment');
+                // 2. SAMAKAN OTAK DENGAN ADMIN: Baca lokasi dari riwayat transaksi penuh!
+                // Kita abaikan last_location dari master_kits karena sering desync
+                const { data: allLogs } = await db.from('transactions').select('kit_id, phase, business_name').order('created_at', { ascending: true });
+                
                 globalKitMap.clear();
-                if (kitStatusData) {
-                    kitStatusData.forEach(k => {
-                        globalKitMap.set(k.kit_id, { 
-                            location: k.last_location || 'Warehouse', 
-                            status: k.status_deployment || 'Available' 
-                        });
+                if (allLogs) {
+                    allLogs.forEach(log => {
+                        if (log.kit_id) {
+                            if (log.phase === 'Phase 4') {
+                                globalKitMap.set(log.kit_id, { location: 'Warehouse', status: 'Available' });
+                            } else if (log.phase === 'Phase 1') {
+                                globalKitMap.set(log.kit_id, { location: log.business_name, status: 'Deployed' });
+                            }
+                        }
                     });
                 }
 
                 let offlineQueue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
                 let offlineTrx = offlineQueue.map(q => ({...q, is_offline: true}));
-                let combinedDisplay = [...offlineTrx, ...globalTransactions].slice(0, 50); 
+                let combinedDisplay = [...offlineTrx, ...globalTransactions]; 
 
                 document.getElementById('activity-list').innerHTML = combinedDisplay.map(trx => {
-                    // --- ACTIVITY LOG UI ENHANCEMENT (ACTION PLAN) ---
                     let pairingBadgeHTML = "";
                     if (trx.phase === 'Phase 1' && trx.other_item) {
                         if (trx.other_item.includes("Paired with")) {
@@ -1022,7 +1037,7 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                 
             } catch (e) { console.error("Offline: Using cache data.", e); }
         }
-
+        
         window.onload = initApp;
     </script>
 </body>
