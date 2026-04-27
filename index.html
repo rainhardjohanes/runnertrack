@@ -342,42 +342,71 @@ function renderKitList() {
             const search = document.getElementById('search-kit').value.toUpperCase();
             const business = document.getElementById('input-business').value;
             const listEl = document.getElementById('list-kit');
+            const isAdmin = currentUser.role.toLowerCase() === 'admin'; // DETEKSI ADMIN
             
             let filtered = masterKitsData.filter(k => {
                 const searchMatch = search === '' || k.kit_id.toUpperCase().includes(search);
-                const kitState = globalKitMap.get(k.kit_id) || { status: 'Available', location: 'Warehouse' };
                 
+                // Tentukan status & lokasi PALING AKURAT
+                let actualStatus = k.status_deployment || 'Available';
+                let actualLocation = k.last_location || 'Warehouse';
+                
+                if (globalKitMap.has(k.kit_id)) {
+                    actualStatus = globalKitMap.get(k.kit_id).status;
+                    actualLocation = globalKitMap.get(k.kit_id).location;
+                }
+                
+                // --- Logika untuk Phase 4 ---
                 if (phase === 'Phase 4') {
-                    const dbLoc = (kitState.location || '').toLowerCase().trim();
+                    const dbLoc = actualLocation.toLowerCase().trim();
                     const inputLoc = (business || '').toLowerCase().trim();
                     const locationMatch = (dbLoc === inputLoc) || dbLoc.includes(inputLoc) || inputLoc.includes(dbLoc);
-                    return locationMatch && searchMatch;
+                    
+                    // JIKA ADMIN: Abaikan batasan lokasi (locationMatch)! Tampilkan semua.
+                    return (locationMatch || isAdmin) && searchMatch;
                 }
                 
                 // --- Logika untuk Phase 1 ---
                 const isGood = (k.current_status === 'Good');
+                const isAvailable = (actualStatus === 'Available');
                 
-                // Cek status ketersediaan (Berdasarkan Log ATAU Tabel Master)
-                const isAvailable = (currentUser.role.toLowerCase() === 'admin') || 
-                                    (kitState.status === 'Available') || 
-                                    (k.status_deployment === 'Available' || !k.status_deployment);
-                
-                // Tampilkan SEMUA barang yang Available di Gudang (Abaikan Area)
-                return isGood && isAvailable && searchMatch;
+                // JIKA ADMIN: Abaikan batasan "Available", tapi barang tetap HARUS "Good" (tidak rusak).
+                return isGood && (isAvailable || isAdmin) && searchMatch;
             });
 
             if(filtered.length === 0) {
-                listEl.innerHTML = `<li class="p-8 text-center text-slate-400 text-xs italic">Tidak ada barang yang tersedia di Warehouse.</li>`;
+                listEl.innerHTML = `<li class="p-8 text-center text-slate-400 text-xs italic">Tidak ada barang yang tersedia.</li>`;
             } else {
                 listEl.innerHTML = filtered.map(k => {
                     const badge = getKitBadge(k.kit_type);
+                    
+                    // LABEL WARNING KHUSUS ADMIN (Agar Admin tahu kalau barang ini ditarik paksa dari outlet lain)
+                    let warningTag = '';
+                    if (isAdmin) {
+                        let actualStatus = k.status_deployment || 'Available';
+                        let actualLocation = k.last_location || 'Warehouse';
+                        if (globalKitMap.has(k.kit_id)) {
+                            actualStatus = globalKitMap.get(k.kit_id).status;
+                            actualLocation = globalKitMap.get(k.kit_id).location;
+                        }
+                        
+                        if (phase === 'Phase 4' && actualLocation.toLowerCase().trim() !== (business || '').toLowerCase().trim() && actualLocation !== '') {
+                            warningTag = `<span class="text-[8px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200 ml-2 shadow-sm">Sys: ${actualLocation}</span>`;
+                        } else if (phase === 'Phase 1' && actualStatus !== 'Available') {
+                            warningTag = `<span class="text-[8px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200 ml-2 shadow-sm">Masih di ${actualLocation}</span>`;
+                        }
+                    }
+
                     return `<li class="p-5 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition border-b" onclick="selectKit('${k.kit_id}')">
-                        <span class="font-black text-slate-800">${k.kit_id}</span>
+                        <div>
+                            <span class="font-black text-slate-800">${k.kit_id}</span>
+                            ${warningTag}
+                        </div>
                         <span class="text-[9px] font-black uppercase px-2 py-1 rounded border shadow-sm flex items-center ${badge.colorClass}">${badge.icon} ${k.kit_type}</span>
                     </li>`;
                 }).join('');        
             }
-        }
+        }        
         
         function selectBusiness(name) {
             document.getElementById('input-business').value = name; document.getElementById('label-business').innerText = name;
@@ -537,10 +566,17 @@ function toggleFormFields() {
                 
                 if (!isAdmin) {
                     if(phase === 'Phase 1') { 
-                        // Percaya pada data gabungan Log & Tabel Master
-                        const isReallyAvailable = (kitState.status === 'Available') || (kitMaster.status_deployment === 'Available' || !kitMaster.status_deployment);
-                        if(!isReallyAvailable) {
-                            errLabel.innerText = `REJECTED: ${kitId} is already deployed at ${kitState.location}`; 
+                        // Cek status paling akurat
+                        let actualStatus = kitMaster.status_deployment || 'Available';
+                        let actualLocation = kitMaster.last_location || 'Warehouse';
+                        if (globalKitMap.has(kitId)) {
+                            actualStatus = globalKitMap.get(kitId).status;
+                            actualLocation = globalKitMap.get(kitId).location;
+                        }
+
+                        // Tolak jika nyatanya masih ter-deploy di outlet lain
+                        if(actualStatus !== 'Available') {
+                            errLabel.innerText = `REJECTED: ${kitId} is already deployed at ${actualLocation}`; 
                             errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
                         }
                     }
@@ -706,26 +742,28 @@ function toggleFormFields() {
             document.getElementById('field-checklist').classList.remove('hidden');
         }
            
-        function getGPS() {
+function getGPS() {
             const gpsLabel = document.getElementById('gps-status'); const gpsInput = document.getElementById('input-gps');
+            gpsLabel.innerHTML = `<span class="text-blue-500 italic"><i class="spinner mr-1" style="border-top-color: #3b82f6;"></i>Locating...</span>`;
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     (p) => { gpsInput.value = `${p.coords.latitude}, ${p.coords.longitude}`; gpsLabel.innerHTML = `<span class="text-green-600">Location Locked</span>`; },
-                    (e) => { gpsLabel.innerHTML = `<span class="text-red-500 font-bold italic">GPS Denied!</span>`; }, { enableHighAccuracy: true }
+                    (e) => { gpsLabel.innerHTML = `<span class="text-red-500 font-bold italic">GPS Failed/Denied!</span>`; }, 
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } // <-- BUG 4 FIXED: Timeout 10 detik
                 );
             }
         }
-
-        async function compressImageToBase64(file) {
+async function compressImageToBase64(file) {
             return new Promise((res) => {
                 const reader = new FileReader(); reader.readAsDataURL(file);
                 reader.onload = e => {
                     const img = new Image(); img.src = e.target.result;
                     img.onload = () => {
-                        const canvas = document.createElement('canvas'); let w = img.width, h = img.height; const max = 1024;
+                        const canvas = document.createElement('canvas'); let w = img.width, h = img.height; 
+                        const max = 800; // <-- BUG 2 FIXED: Diturunkan dari 1024 ke 800 agar aman di LocalStorage
                         if(w>h && w>max){h*=max/w; w=max;} else if(h>max){w*=max/h; h=max;}
                         canvas.width = w; canvas.height = h; canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                        res(canvas.toDataURL('image/jpeg', 0.6));
+                        res(canvas.toDataURL('image/jpeg', 0.5)); // <-- Diturunkan quality-nya dari 0.6 ke 0.5
                     };
                 };
             });
@@ -753,21 +791,16 @@ function toggleFormFields() {
             } else banner.classList.add('hidden-view');
         }
 
-        async function processSinglePayload(p) {
-            let photoUrl = null;
-            if (p.photo_b64) {
-                const res = await fetch(p.photo_b64); const blob = await res.blob();
-                const fName = `${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
-                const { error: upErr } = await db.storage.from('proofs').upload(fName, blob);
-                if (upErr) throw upErr;
-                photoUrl = db.storage.from('proofs').getPublicUrl(fName).data.publicUrl;
-            }
+async function processSinglePayload(p) {
+            // BUG 1 FIXED: Kita tidak lagi upload gambar di dalam fungsi loop ini. 
+            // Gambar sudah di-upload di fungsi utama, sehingga p.proof_photo sudah matang.
 
             const { error: dbErr } = await db.from('transactions').insert([{
                 sdr_name: p.sdr_name, area: p.area, phase: p.phase, runner_name: p.runner_name, business_name: p.business_name, 
                 kit_id: p.kit_id, kit_type: p.kit_type, sd_qty: p.sd_qty, sd_uploaded: p.sd_uploaded,
                 gps_location: p.gps_location, device_condition: p.device_condition, missing_or_issue: p.missing_or_issue, 
-                proof_photo: photoUrl, created_at: p.created_at, other_item: p.other_item, pickup_time: p.pickup_time, drop_off_time: p.drop_off_time
+                proof_photo: p.proof_photo, // <-- Ambil langsung string URL-nya
+                created_at: p.created_at, other_item: p.other_item, pickup_time: p.pickup_time, drop_off_time: p.drop_off_time
             }]);
             
             if (dbErr) throw dbErr;
@@ -782,9 +815,7 @@ function toggleFormFields() {
                     updateFields = { status_deployment: 'Available', last_location: 'Warehouse' };
                 }
 
-                if (p.device_condition === 'Damaged') {
-                    updateFields.current_status = 'Damaged';
-                }
+                if (p.device_condition === 'Damaged') { updateFields.current_status = 'Damaged'; }
 
                 if (Object.keys(updateFields).length > 0) {
                     await db.from('master_kits').update(updateFields).eq('kit_id', p.kit_id);
@@ -792,29 +823,34 @@ function toggleFormFields() {
             }
         }
 
-        async function syncOfflineQueue() {
+
+async function syncOfflineQueue() {
             if (!navigator.onLine) { alert("You are still offline. Please find a better signal."); return; }
             let queue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
             if (queue.length === 0) return;
 
-            // --- FILTER SANITASI CACHE ---
-            // Bersihkan data sampah dari cache lama HP sebelum dikirim ke database
             queue = queue.map(q => {
-                if (q.phase === 'Phase 2' || q.phase === 'Phase 3') {
-                    q.kit_id = null;
-                    q.kit_type = null;
-                    q.device_condition = null; // Phase 2 & 3 tidak butuh kondisi device
-                }
+                if (q.phase === 'Phase 2' || q.phase === 'Phase 3') { q.kit_id = null; q.kit_type = null; q.device_condition = null; }
                 return q;
             });
-            // -----------------------------
 
             const btn = document.getElementById('btn-sync-now');
             btn.innerHTML = `<div class="spinner mr-1"></div> Syncing...`; btn.disabled = true;
 
             let remainingQueue = [];
             for (let i = 0; i < queue.length; i++) {
-                try { await processSinglePayload(queue[i]); } catch (e) { remainingQueue.push(queue[i]); }
+                try { 
+                    // Jika data tersimpan dengan base64, upload dulu!
+                    if (queue[i].photo_b64 && !queue[i].proof_photo) {
+                        const res = await fetch(queue[i].photo_b64); const blob = await res.blob();
+                        const fName = `offline_${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
+                        const { error: upErr } = await db.storage.from('proofs').upload(fName, blob);
+                        if (upErr) throw upErr;
+                        queue[i].proof_photo = db.storage.from('proofs').getPublicUrl(fName).data.publicUrl;
+                        queue[i].photo_b64 = null; // Kosongkan base64 agar ringan
+                    }
+                    await processSinglePayload(queue[i]); 
+                } catch (e) { remainingQueue.push(queue[i]); }
             }
 
             localStorage.setItem('runner_sync_queue', JSON.stringify(remainingQueue));
@@ -824,6 +860,7 @@ function toggleFormFields() {
             if (remainingQueue.length === 0) showToast("All Offline Data Synced!");
             else showToast(`${remainingQueue.length} items failed to sync. Try again later.`, true);
         }
+
 
         window.addEventListener('online', syncOfflineQueue);
 
@@ -876,17 +913,33 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
             btnLoad.classList.remove('hidden'); document.getElementById('btn-submit').disabled = true;
 
             try {
-                let photoBase64 = null; 
+                let finalPhotoUrl = null; 
+                let photoBase64ForOffline = null;
                 const fileInput = document.getElementById('input-photo');
-                if (fileInput.files.length > 0) photoBase64 = await compressImageToBase64(fileInput.files[0]);
+                
+                // BUG 1 FIXED: Upload Foto HANYA 1x di SINI jika online
+                if (fileInput.files.length > 0) {
+                    photoBase64ForOffline = await compressImageToBase64(fileInput.files[0]);
+                    if (navigator.onLine) {
+                        // Tembak upload ke Supabase SEBELUM dibagi-bagi ke Payload
+                        const res = await fetch(photoBase64ForOffline); const blob = await res.blob();
+                        const fName = `${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
+                        const { error: upErr } = await db.storage.from('proofs').upload(fName, blob);
+                        if (upErr) throw upErr;
+                        finalPhotoUrl = db.storage.from('proofs').getPublicUrl(fName).data.publicUrl;
+                    }
+                }
 
                 const basePayload = {
                     sdr_name: phase === 'Phase 1' ? sdrNameVal : null,
                     area: document.getElementById('input-area').value, phase: phase, runner_name: document.getElementById('input-runner').value,
                     business_name: business, gps_location: document.getElementById('input-gps').value, 
                     device_condition: condition, missing_or_issue: document.getElementById('input-issue').value, 
-                    photo_b64: photoBase64, created_at: new Date().toISOString(), other_item: document.getElementById('input-other-item').value, 
-                    pickup_time: document.getElementById('input-pickup-time').value, drop_off_time: document.getElementById('input-dropoff-time').value 
+                    proof_photo: finalPhotoUrl,         // Jika online, ini terisi URL matang. Jika offline, ini isinya null.
+                    photo_b64: photoBase64ForOffline,   // Disiapkan jika masuk Offline Queue
+                    created_at: new Date().toISOString(), other_item: document.getElementById('input-other-item').value, 
+                    pickup_time: document.getElementById('input-pickup-time').value || null,   // BUG 3 FIXED
+                    drop_off_time: document.getElementById('input-dropoff-time').value || null // BUG 3 FIXED
                 };
 
                 let payloadsToProcess = [];
@@ -897,17 +950,9 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                     let upSd = parseInt(uploadedQtyRaw) || 0;
                     let notUpSd = totalSd - upSd;
 
-                    // Log 1: SD yang sukses diupload
-                    if (upSd > 0) {
-                        payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_up', sd_qty: upSd, sd_uploaded: upSd, kit_id: null, kit_type: null });
-                    }
-                    // Log 2: SD yang ditarik tapi belum diupload
-                    if (notUpSd > 0) {
-                        payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_noup', sd_qty: notUpSd, sd_uploaded: 0, kit_id: null, kit_type: null });
-                    }
-                    if (upSd === 0 && notUpSd === 0) {
-                        payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_zero', sd_qty: 0, sd_uploaded: 0, kit_id: null, kit_type: null });
-                    }
+                    if (upSd > 0) payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_up', sd_qty: upSd, sd_uploaded: upSd, kit_id: null, kit_type: null });
+                    if (notUpSd > 0) payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_noup', sd_qty: notUpSd, sd_uploaded: 0, kit_id: null, kit_type: null });
+                    if (upSd === 0 && notUpSd === 0) payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_zero', sd_qty: 0, sd_uploaded: 0, kit_id: null, kit_type: null });
                 } 
                 // --- LOGIC PHASE 1 & PHASE 4 (PER KIT) ---
                 else if (selectedKits.length > 0 && (phase === 'Phase 1' || phase === 'Phase 4')) {
@@ -922,39 +967,59 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                             else pairStatusText = `Paired with ${pairedEl.value}`;
                         }
 
-                        // Cek status upload spesifik untuk kit ini (khusus phase 4)
                         let kitUploadedCount = 0;
                         if (phase === 'Phase 4') {
                             let isUp = document.getElementById('upload-status-' + kId).value;
                             kitUploadedCount = (isUp === 'Yes') ? 1 : 0;
                         }
 
-                        let mainPayload = {
-                            ...basePayload, 
-                            id: 'local_' + Date.now() + '_' + i, 
-                            kit_id: kId, 
-                            kit_type: kMaster ? kMaster.kit_type : null,
-                            sd_qty: null,
-                            sd_uploaded: kitUploadedCount // Terisi sesuai tombol di kotak kit
-                        };
+                        if (phase === 'Phase 1') {
+                            let actualStatus = kMaster ? (kMaster.status_deployment || 'Available') : 'Available';
+                            let actualLocation = kMaster ? (kMaster.last_location || 'Warehouse') : 'Warehouse';
+                            if (globalKitMap.has(kId)) {
+                                actualStatus = globalKitMap.get(kId).status;
+                                actualLocation = globalKitMap.get(kId).location;
+                            }
 
-                        if (pairStatusText) {
-                            mainPayload.other_item = basePayload.other_item ? `${basePayload.other_item} | [${pairStatusText}]` : `[${pairStatusText}]`;
+                            if (actualStatus !== 'Available' && actualLocation !== business && actualLocation !== 'Warehouse') {
+                                payloadsToProcess.push({
+                                    ...basePayload,
+                                    proof_photo: null, photo_b64: null, // Log auto-return TIDAK BUTUH upload foto lagi
+                                    id: 'auto_p4_' + Date.now() + '_' + i,
+                                    phase: 'Phase 4', business_name: actualLocation, sdr_name: null, kit_id: kId,
+                                    kit_type: kMaster ? kMaster.kit_type : null, sd_qty: null, sd_uploaded: 0,
+                                    missing_or_issue: '[SYSTEM AUTO-RETURN] Ditarik paksa via Admin ke ' + business, other_item: ''
+                                });
+                            }
                         }
 
+                        let mainPayload = { ...basePayload, id: 'local_' + Date.now() + '_' + i, kit_id: kId, kit_type: kMaster ? kMaster.kit_type : null, sd_qty: null, sd_uploaded: kitUploadedCount };
+                        if (pairStatusText) mainPayload.other_item = basePayload.other_item ? `${basePayload.other_item} | [${pairStatusText}]` : `[${pairStatusText}]`;
                         payloadsToProcess.push(mainPayload);
 
-                        // Duplikasi payload jika ada auto-pairing (e.g., Wristcam)
                         if (pairedEl && pairedEl.value && pairedEl.value !== 'STANDALONE') {
                             const pairedId = pairedEl.value;
                             const pairedMaster = masterKitsData.find(k => k.kit_id === pairedId);
+                            
+                            if (phase === 'Phase 1') {
+                                let pActualStatus = pairedMaster ? (pairedMaster.status_deployment || 'Available') : 'Available';
+                                let pActualLoc = pairedMaster ? (pairedMaster.last_location || 'Warehouse') : 'Warehouse';
+                                if (globalKitMap.has(pairedId)) {
+                                    pActualStatus = globalKitMap.get(pairedId).status; pActualLoc = globalKitMap.get(pairedId).location;
+                                }
+                                if (pActualStatus !== 'Available' && pActualLoc !== business && pActualLoc !== 'Warehouse') {
+                                    payloadsToProcess.push({
+                                        ...basePayload, proof_photo: null, photo_b64: null,
+                                        id: 'auto_p4_pair_' + Date.now() + '_' + i, phase: 'Phase 4', business_name: pActualLoc, sdr_name: null, kit_id: pairedId,
+                                        kit_type: pairedMaster ? pairedMaster.kit_type : null, sd_qty: null, sd_uploaded: 0,
+                                        missing_or_issue: '[SYSTEM AUTO-RETURN] Paired Device ditarik paksa via Admin', other_item: ''
+                                    });
+                                }
+                            }
+
                             payloadsToProcess.push({
-                                ...basePayload,
-                                id: 'local_pair_' + Date.now() + '_' + i,
-                                kit_id: pairedId,
-                                kit_type: pairedMaster ? pairedMaster.kit_type : 'Paired Device',
-                                sd_qty: null,
-                                sd_uploaded: kitUploadedCount, // Mengikuti status induknya
+                                ...basePayload, id: 'local_pair_' + Date.now() + '_' + i, kit_id: pairedId, kit_type: pairedMaster ? pairedMaster.kit_type : 'Paired Device',
+                                sd_qty: null, sd_uploaded: kitUploadedCount,
                                 missing_or_issue: (basePayload.missing_or_issue ? basePayload.missing_or_issue + " | " : "") + `[Auto-Paired with ${kId}]`
                             });
                         }
@@ -966,14 +1031,19 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                     payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now(), kit_id: null, kit_type: null, sd_qty: phase2SdQty, sd_uploaded: 0 });
                 }
 
+                // EKSEKUSI PENYIMPANAN
                 for (const payload of payloadsToProcess) {
                     if (navigator.onLine) {
-                        try { await processSinglePayload(payload); } catch (uploadError) { saveToOfflineQueue(payload); }
+                        try { 
+                            // BUG 1 FIXED: Karena jika online photoUrl sudah matang, fungsi di bawah hanya menembak teks ke DB
+                            await processSinglePayload(payload); 
+                        } catch (uploadError) { saveToOfflineQueue(payload); }
                     } else saveToOfflineQueue(payload);
                 }
                 
                 showToast(navigator.onLine ? "Data Transmitted Successfully!" : "Saved Offline. Will sync automatically.", !navigator.onLine);
 
+                // RESET FORM
                 this.reset(); 
                 document.getElementById('input-sdr-name').value = ""; document.getElementById('input-condition').value = "";
                 document.getElementById('input-match').value = ""; 
