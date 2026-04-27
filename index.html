@@ -350,10 +350,7 @@ function renderKitList() {
                 if (phase === 'Phase 4') {
                     const dbLoc = (kitState.location || '').toLowerCase().trim();
                     const inputLoc = (business || '').toLowerCase().trim();
-                    
-                    // Super fleksibel: Cocokkan nama lokasi secara menyilang agar kebal typo atau selisih format
                     const locationMatch = (dbLoc === inputLoc) || dbLoc.includes(inputLoc) || inputLoc.includes(dbLoc);
-                    
                     return locationMatch && searchMatch;
                 }
                 
@@ -361,13 +358,20 @@ function renderKitList() {
                 const area = document.getElementById('input-area').value;
                 const areaMatch = (!area || k.area_name === area);
                 const isGood = (k.current_status === 'Good');
-                const isAvailable = (currentUser.role.toLowerCase() === 'admin') || (kitState.status === 'Available');
                 
-                return areaMatch && isGood && isAvailable && searchMatch;
+                // GABUNGAN: Anggap Available jika Log Transaksi ATAU Tabel Master bilang Available
+                const isAvailable = (currentUser.role.toLowerCase() === 'admin') || 
+                                    (kitState.status === 'Available') || 
+                                    (k.status_deployment === 'Available' || !k.status_deployment);
+                
+                // GOD MODE Phase 1: Jika user mengetik ID manual, paksa muncul (meskipun beda Area operasi) asalkan barang nganggur
+                const isGodMode = search.length >= 3 && searchMatch && isGood && isAvailable;
+
+                return (areaMatch && isGood && isAvailable && searchMatch) || isGodMode;
             });
 
             if(filtered.length === 0) {
-                listEl.innerHTML = `<li class="p-8 text-center text-slate-400 text-xs italic">Tidak ada barang yang terdeteksi di merchant ini.</li>`;
+                listEl.innerHTML = `<li class="p-8 text-center text-slate-400 text-xs italic">Tidak ada barang yang tersedia.</li>`;
             } else {
                 listEl.innerHTML = filtered.map(k => {
                     const badge = getKitBadge(k.kit_type);
@@ -378,7 +382,7 @@ function renderKitList() {
                 }).join('');        
             }
         }
-                
+
         function selectBusiness(name) {
             document.getElementById('input-business').value = name; document.getElementById('label-business').innerText = name;
             document.getElementById('label-business').classList.replace('text-slate-400', 'text-slate-800');
@@ -536,10 +540,15 @@ function toggleFormFields() {
                 }
                 
                 if (!isAdmin) {
-                    if(phase === 'Phase 1' && kitState.status !== 'Available') { 
-                        errLabel.innerText = `REJECTED: ${kitId} is already deployed at ${kitState.location}`; 
-                        errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                    if(phase === 'Phase 1') { 
+                        // Percaya pada data gabungan Log & Tabel Master
+                        const isReallyAvailable = (kitState.status === 'Available') || (kitMaster.status_deployment === 'Available' || !kitMaster.status_deployment);
+                        if(!isReallyAvailable) {
+                            errLabel.innerText = `REJECTED: ${kitId} is already deployed at ${kitState.location}`; 
+                            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                        }
                     }
+                    
                     if(phase === 'Phase 4') {
                         const dbLoc = (kitState.location || '').toLowerCase().trim();
                         const inputLoc = (business || '').toLowerCase().trim();
