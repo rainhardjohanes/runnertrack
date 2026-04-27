@@ -347,13 +347,19 @@ function renderKitList() {
             let filtered = masterKitsData.filter(k => {
                 const searchMatch = search === '' || k.kit_id.toUpperCase().includes(search);
                 
-                // Tentukan status & lokasi PALING AKURAT
+                // Tentukan status, lokasi, dan KONDISI PALING AKURAT (Anti-Typo)
                 let actualStatus = k.status_deployment || 'Available';
                 let actualLocation = k.last_location || 'Warehouse';
+                let actualCondition = (k.current_status || '').toLowerCase().trim(); 
                 
                 if (globalKitMap.has(k.kit_id)) {
                     actualStatus = globalKitMap.get(k.kit_id).status;
                     actualLocation = globalKitMap.get(k.kit_id).location;
+                    
+                    // JARING PENGAMAN: Jika di log terakhir tercatat rusak, paksa statusnya jadi Damaged (Meskipun tabel master bilang Good)
+                    if ((globalKitMap.get(k.kit_id).condition || '').toLowerCase().trim() === 'damaged') {
+                        actualCondition = 'damaged'; 
+                    }
                 }
                 
                 // --- Logika untuk Phase 4 ---
@@ -361,16 +367,15 @@ function renderKitList() {
                     const dbLoc = actualLocation.toLowerCase().trim();
                     const inputLoc = (business || '').toLowerCase().trim();
                     const locationMatch = (dbLoc === inputLoc) || dbLoc.includes(inputLoc) || inputLoc.includes(dbLoc);
-                    
-                    // JIKA ADMIN: Abaikan batasan lokasi (locationMatch)! Tampilkan semua.
                     return (locationMatch || isAdmin) && searchMatch;
                 }
                 
                 // --- Logika untuk Phase 1 ---
-                const isGood = (k.current_status === 'Good');
+                // Hanya lolos jika kondisi aktual BUKAN damaged
+                const isGood = actualCondition !== 'damaged';
                 const isAvailable = (actualStatus === 'Available');
                 
-                // JIKA ADMIN: Abaikan batasan "Available", tapi barang tetap HARUS "Good" (tidak rusak).
+                // JIKA ADMIN: Abaikan batasan "Available", tapi barang tetap HARUS tidak rusak.
                 return isGood && (isAvailable || isAdmin) && searchMatch;
             });
 
@@ -559,8 +564,12 @@ function toggleFormFields() {
                     errLabel.innerText = `ERROR: ID ${kitId} not recognized.`; 
                     errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
                 }
-                if(kitMaster.current_status === 'Damaged') { 
-                    errLabel.innerText = `REJECTED: Kit ${kitId} is QUARANTINED.`; 
+                // VALIDASI KETAT DAMAGED
+                let actualCondition = (kitMaster.current_status || '').toLowerCase().trim();
+                if ((kitState.condition || '').toLowerCase().trim() === 'damaged') actualCondition = 'damaged';
+
+                if(actualCondition === 'damaged') { 
+                    errLabel.innerText = `REJECTED: Kit ${kitId} is QUARANTINED (Damaged).`; 
                     errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
                 }
                 
@@ -1071,22 +1080,23 @@ async function fetchData() {
                 if(currentUser.role === 'Staff') query = query.eq('runner_name', currentUser.runner_name);
                 globalTransactions = (await query).data || [];
                 
-                // 2. BACA DARI YANG TERBARU (Descending) agar log semalam tidak terpotong limit 1000
+                // 2. BACA DARI YANG TERBARU (Descending)
                 const { data: allLogs } = await db.from('transactions')
-                    .select('kit_id, phase, business_name')
+                    .select('kit_id, phase, business_name, device_condition') // <-- TAMBAHAN: Tarik history kondisi
                     .order('created_at', { ascending: false }) 
-                    .limit(3000); // Perbesar limit tarikan
+                    .limit(3000);
                 
                 globalKitMap.clear();
                 if (allLogs) {
-                    // Karena urutan dari yang paling baru, kita ambil status PERTAMA yang kita temukan saja
                     allLogs.forEach(log => {
                         if (log.kit_id && !globalKitMap.has(log.kit_id)) {
+                            let loc = log.business_name;
+                            let stat = 'Deployed';
                             if (log.phase === 'Phase 4' || log.phase === 'Phase 3') {
-                                globalKitMap.set(log.kit_id, { location: 'Warehouse', status: 'Available' });
-                            } else if (log.phase === 'Phase 1' || log.phase === 'Phase 2') {
-                                globalKitMap.set(log.kit_id, { location: log.business_name, status: 'Deployed' });
+                                loc = 'Warehouse'; stat = 'Available';
                             }
+                            // Simpan status, lokasi, dan kondisi log terakhir
+                            globalKitMap.set(log.kit_id, { location: loc, status: stat, condition: log.device_condition });
                         }
                     });
                 }
