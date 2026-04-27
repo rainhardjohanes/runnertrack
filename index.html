@@ -355,23 +355,19 @@ function renderKitList() {
                 }
                 
                 // --- Logika untuk Phase 1 ---
-                const area = document.getElementById('input-area').value;
-                const areaMatch = (!area || k.area_name === area);
                 const isGood = (k.current_status === 'Good');
                 
-                // GABUNGAN: Anggap Available jika Log Transaksi ATAU Tabel Master bilang Available
+                // Cek status ketersediaan (Berdasarkan Log ATAU Tabel Master)
                 const isAvailable = (currentUser.role.toLowerCase() === 'admin') || 
                                     (kitState.status === 'Available') || 
                                     (k.status_deployment === 'Available' || !k.status_deployment);
                 
-                // GOD MODE Phase 1: Jika user mengetik ID manual, paksa muncul (meskipun beda Area operasi) asalkan barang nganggur
-                const isGodMode = search.length >= 3 && searchMatch && isGood && isAvailable;
-
-                return (areaMatch && isGood && isAvailable && searchMatch) || isGodMode;
+                // Tampilkan SEMUA barang yang Available di Gudang (Abaikan Area)
+                return isGood && isAvailable && searchMatch;
             });
 
             if(filtered.length === 0) {
-                listEl.innerHTML = `<li class="p-8 text-center text-slate-400 text-xs italic">Tidak ada barang yang tersedia.</li>`;
+                listEl.innerHTML = `<li class="p-8 text-center text-slate-400 text-xs italic">Tidak ada barang yang tersedia di Warehouse.</li>`;
             } else {
                 listEl.innerHTML = filtered.map(k => {
                     const badge = getKitBadge(k.kit_type);
@@ -382,7 +378,7 @@ function renderKitList() {
                 }).join('');        
             }
         }
-
+        
         function selectBusiness(name) {
             document.getElementById('input-business').value = name; document.getElementById('label-business').innerText = name;
             document.getElementById('label-business').classList.replace('text-slate-400', 'text-slate-800');
@@ -548,7 +544,7 @@ function toggleFormFields() {
                             errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
                         }
                     }
-                    
+
                     if(phase === 'Phase 4') {
                         const dbLoc = (kitState.location || '').toLowerCase().trim();
                         const inputLoc = (business || '').toLowerCase().trim();
@@ -996,22 +992,29 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
         
 async function fetchData() {
             try {
+                // 0. WAJIB REFRESH MASTER KITS JUGA! Agar ingatan HP sama dengan Admin
+                const { data: freshKits } = await db.from('master_kits').select('*').order('kit_id');
+                if(freshKits) masterKitsData = freshKits;
+
                 // 1. Ambil data log untuk ditampilkan di UI (limit 50)
                 let query = db.from('transactions').select('*').order('created_at', { ascending: false }).limit(50); 
                 if(currentUser.role === 'Staff') query = query.eq('runner_name', currentUser.runner_name);
                 globalTransactions = (await query).data || [];
                 
-                // 2. SAMAKAN OTAK DENGAN ADMIN: Baca lokasi dari riwayat transaksi penuh!
-                // Kita abaikan last_location dari master_kits karena sering desync
-                const { data: allLogs } = await db.from('transactions').select('kit_id, phase, business_name').order('created_at', { ascending: true });
+                // 2. BACA DARI YANG TERBARU (Descending) agar log semalam tidak terpotong limit 1000
+                const { data: allLogs } = await db.from('transactions')
+                    .select('kit_id, phase, business_name')
+                    .order('created_at', { ascending: false }) 
+                    .limit(3000); // Perbesar limit tarikan
                 
                 globalKitMap.clear();
                 if (allLogs) {
+                    // Karena urutan dari yang paling baru, kita ambil status PERTAMA yang kita temukan saja
                     allLogs.forEach(log => {
-                        if (log.kit_id) {
-                            if (log.phase === 'Phase 4') {
+                        if (log.kit_id && !globalKitMap.has(log.kit_id)) {
+                            if (log.phase === 'Phase 4' || log.phase === 'Phase 3') {
                                 globalKitMap.set(log.kit_id, { location: 'Warehouse', status: 'Available' });
-                            } else if (log.phase === 'Phase 1') {
+                            } else if (log.phase === 'Phase 1' || log.phase === 'Phase 2') {
                                 globalKitMap.set(log.kit_id, { location: log.business_name, status: 'Deployed' });
                             }
                         }
