@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FO Track - Atlas Capture</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .hidden-view { display: none !important; }
+        .spinner { border: 3px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: #fff; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans antialiased pb-24">
+
+    <!-- App Container -->
+    <div id="app-container" class="max-w-md mx-auto bg-slate-50 min-h-screen shadow-2xl relative">
+        <!-- Header -->
+        <header class="bg-slate-800 text-white p-5 shadow-md sticky top-0 z-30 flex justify-between items-center rounded-b-3xl">
+            <div>
+                <h1 class="text-xl font-black italic tracking-tighter text-emerald-400">FO Track</h1>
+                <p class="text-[10px] text-slate-300 uppercase tracking-widest" id="header-name">Loading...</p>
+            </div>
+            <a href="index.html" class="bg-slate-700 px-3 py-2 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-600 border border-slate-600"><i class="fa-solid fa-boxes-packing mr-1"></i> Logistic Mode</a>
+        </header>
+
+        <div class="p-6">
+            <!-- VIEW 1: READY TO CHECK-IN -->
+            <div id="view-checkin" class="space-y-6">
+                <div class="bg-emerald-50 border border-emerald-200 p-5 rounded-[2rem] text-center shadow-sm">
+                    <i class="fa-solid fa-location-dot text-3xl text-emerald-500 mb-2"></i>
+                    <h2 class="text-lg font-black text-emerald-800">Start Your Visit</h2>
+                    <p class="text-xs text-emerald-600 mt-1">Select location and log your arrival time.</p>
+                </div>
+
+                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Merchant Location *</label>
+                        <select id="input-business" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none" required></select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Visit Purpose *</label>
+                        <select id="input-visit-type" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none" required>
+                            <option value="">-- Select Purpose --</option>
+                            <option value="Maintenance / Troubleshoot">Maintenance / Troubleshoot</option>
+                            <option value="Audit / Routine Check">Audit / Routine Check</option>
+                            <option value="New Merchant Onboarding">New Merchant Onboarding</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button onclick="doCheckIn()" id="btn-checkin" class="w-full bg-emerald-500 text-white font-black py-5 rounded-[2rem] shadow-xl hover:bg-emerald-600 flex justify-center items-center text-lg uppercase tracking-widest transition-colors">
+                    <span id="text-checkin"><i class="fa-solid fa-right-to-bracket mr-2"></i> CHECK-IN NOW</span>
+                    <span id="load-checkin" class="hidden"><div class="spinner mr-2"></div> Locking GPS...</span>
+                </button>
+            </div>
+
+            <!-- VIEW 2: WORK IN PROGRESS (CHECK-OUT) -->
+            <div id="view-checkout" class="space-y-6 hidden-view">
+                <div class="bg-rose-50 border border-rose-200 p-5 rounded-[2rem] shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-3 opacity-10"><i class="fa-solid fa-stopwatch text-6xl text-rose-500"></i></div>
+                    <h2 class="text-xs font-black text-rose-500 uppercase tracking-widest mb-1">Status: Work in Progress</h2>
+                    <p id="active-merchant" class="text-xl font-black text-rose-800 mb-1">Merchant Name</p>
+                    <p class="text-[10px] font-bold text-rose-600">Checked in since: <span id="active-time" class="font-black text-rose-900 bg-white px-2 py-1 rounded shadow-sm">10:45</span></p>
+                </div>
+
+                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Outcome Status *</label>
+                        <select id="input-outcome" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none" required onchange="toggleOtherOutcome()">
+                            <option value="">-- Select Outcome --</option>
+                            <option value="Resolved / Success">Resolved / Success</option>
+                            <option value="Needs Follow Up">Needs Follow Up</option>
+                            <option value="Failed / Closed / No PIC">Failed / Closed / No PIC</option>
+                            <option value="Other">Other (Specify)</option>
+                        </select>
+                        <!-- Input Khusus jika memilih Other -->
+                        <div id="field-other-outcome" class="hidden mt-3">
+                            <input type="text" id="input-other-text" class="w-full p-4 bg-white border border-slate-300 rounded-xl outline-none text-sm font-bold text-slate-700 focus:ring-2 focus:ring-rose-500" placeholder="Type custom outcome here...">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Proof Photo (Location/Device) *</label>
+                        <input type="file" id="input-photo" accept="image/*" capture="environment" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs" required>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Field Notes (Optional)</label>
+                        <textarea id="input-notes" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-sm" rows="2" placeholder="Details of issues or merchant requests..."></textarea>
+                    </div>
+                </div>
+
+                <button onclick="doCheckOut()" id="btn-checkout" class="w-full bg-rose-500 text-white font-black py-5 rounded-[2rem] shadow-xl hover:bg-rose-600 flex justify-center items-center text-lg uppercase tracking-widest transition-colors">
+                    <span id="text-checkout"><i class="fa-solid fa-right-from-bracket mr-2"></i> COMPLETE CHECK-OUT</span>
+                    <span id="load-checkout" class="hidden"><div class="spinner mr-2"></div> Processing...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // CREDENTIALS SUPABASE
+        const db = window.supabase.createClient('https://ksdulyitxvtfvxgoqotd.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZHVseWl0eHZ0ZnZ4Z29xb3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1ODgzNzEsImV4cCI6MjA5MTE2NDM3MX0.nJ4lUtAKKBt_NQu0vZo8Dn6R7GfuE4qpgEfGYkkvh40');
+        
+        let currentUser = null;
+        let activeVisit = null;
+
+        window.onload = async () => {
+            currentUser = JSON.parse(localStorage.getItem('runner_user'));
+            if (!currentUser) {
+                alert("You are not logged in! Redirecting to login page...");
+                window.location.href = "index.html";
+                return;
+            }
+            document.getElementById('header-name').innerText = currentUser.runner_name;
+
+            try {
+                // CEK KE DATABASE: Apakah ada kunjungan menggantung (Check-Out kosong)?
+                const { data, error } = await db.from('fo_visits')
+                    .select('id, business_name, check_in_time')
+                    .eq('runner_name', currentUser.runner_name)
+                    .is('check_out_time', null)
+                    .order('check_in_time', { ascending: false })
+                    .limit(1)
+                    .single();
+
+                if (data) {
+                    // Jika ada, konversi jamnya lalu masuk ke layar Check-Out
+                    const timeObj = new Date(data.check_in_time);
+                    const timeStr = timeObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    
+                    activeVisit = { id: data.id, business: data.business_name, time: timeStr };
+                    showCheckoutUI();
+                } else {
+                    // Jika tidak ada, normal masuk ke layar Check-In
+                    await loadMasterBusinesses();
+                    showCheckinUI();
+                }
+            } catch (err) {
+                // Jika error (atau data memang kosong), masuk ke Check-In
+                await loadMasterBusinesses();
+                showCheckinUI();
+            }
+        };
+
+        // LOAD MERCHANT BERDASARKAN AREA LOGIN
+        async function loadMasterBusinesses() {
+            try {
+                let userArea = null;
+                // Jika bukan admin, cari area runner di tabel master_runners
+                if (currentUser.role.toLowerCase() !== 'admin') {
+                    const { data: rData } = await db.from('master_runners').select('area_name').eq('runner_name', currentUser.runner_name).single();
+                    if (rData) userArea = rData.area_name;
+                }
+
+                let query = db.from('master_businesses').select('business_name').order('business_name');
+                
+                // Terapkan filter area jika ada
+                if (userArea) {
+                    query = query.eq('area_name', userArea);
+                }
+
+                const { data } = await query;
+                const sel = document.getElementById('input-business');
+                
+                if(data.length === 0) {
+                    sel.innerHTML = `<option value="">-- No merchants found in your area --</option>`;
+                } else {
+                    sel.innerHTML = `<option value="">-- Select Merchant Location --</option>` + 
+                                    data.map(b => `<option value="${b.business_name}">${b.business_name}</option>`).join('');
+                }
+            } catch (e) { console.error("Failed to load merchant data.", e); }
+        }
+
+        function toggleOtherOutcome() {
+            const val = document.getElementById('input-outcome').value;
+            const field = document.getElementById('field-other-outcome');
+            if (val === 'Other') {
+                field.classList.remove('hidden');
+                document.getElementById('input-other-text').focus();
+            } else {
+                field.classList.add('hidden');
+                document.getElementById('input-other-text').value = ""; // reset isian
+            }
+        }
+
+        function getPreciseGPS() {
+            return new Promise((resolve, reject) => {
+                if (!navigator.geolocation) reject("GPS is not supported.");
+                navigator.geolocation.getCurrentPosition(
+                    p => resolve(`${p.coords.latitude}, ${p.coords.longitude}`),
+                    e => reject("Please allow GPS access in your browser!"),
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            });
+        }
+
+        async function doCheckIn() {
+            const biz = document.getElementById('input-business').value;
+            const type = document.getElementById('input-visit-type').value;
+
+            if (!biz || !type) { alert("Please select a Merchant and Visit Purpose!"); return; }
+
+            toggleBtn('checkin', true);
+            try {
+                const gps = await getPreciseGPS();
+                const now = new Date().toISOString();
+                
+                const { data, error } = await db.from('fo_visits').insert([{
+                    runner_name: currentUser.runner_name,
+                    business_name: biz,
+                    visit_type: type,
+                    check_in_time: now,
+                    check_in_gps: gps
+                }]).select('id').single();
+
+                if (error) throw error;
+
+                activeVisit = { id: data.id, business: biz, time: new Date().toLocaleTimeString().slice(0,5) };
+                localStorage.setItem('fo_active_visit', JSON.stringify(activeVisit));
+                
+                showCheckoutUI();
+            } catch (err) {
+                alert("Check-In Error: " + (err.message || err));
+            } finally {
+                toggleBtn('checkin', false);
+            }
+        }
+
+        async function doCheckOut() {
+            let outcome = document.getElementById('input-outcome').value;
+            const photoFile = document.getElementById('input-photo').files[0];
+            const notes = document.getElementById('input-notes').value;
+
+            if (!outcome) { alert("Please select the outcome status!"); return; }
+            
+            // Tangkap teks custom jika opsi Other dipilih
+            if (outcome === 'Other') {
+                const customText = document.getElementById('input-other-text').value.trim();
+                if (!customText) { alert("Please specify your custom outcome!"); return; }
+                outcome = `Other: ${customText}`;
+            }
+
+            if (!photoFile) { alert("Proof photo is required!"); return; }
+
+            toggleBtn('checkout', true);
+            try {
+                const gps = await getPreciseGPS();
+                const now = new Date().toISOString();
+
+                const base64 = await compressImageToBase64(photoFile);
+                const res = await fetch(base64); const blob = await res.blob();
+                const fName = `fo_${Date.now()}_${Math.floor(Math.random()*100)}.jpg`;
+                const { error: upErr } = await db.storage.from('proofs').upload(fName, blob);
+                if (upErr) throw upErr;
+                const photoUrl = db.storage.from('proofs').getPublicUrl(fName).data.publicUrl;
+
+                const { error: dbErr } = await db.from('fo_visits')
+                    .update({
+                        check_out_time: now,
+                        check_out_gps: gps,
+                        outcome_status: outcome,
+                        proof_photo: photoUrl,
+                        notes: notes
+                    })
+                    .eq('id', activeVisit.id);
+
+                if (dbErr) throw dbErr;
+
+                localStorage.removeItem('fo_active_visit');
+                activeVisit = null;
+                alert("Check-Out Successful! Visit recorded.");
+                
+                document.getElementById('input-outcome').value = "";
+                document.getElementById('input-other-text').value = "";
+                document.getElementById('field-other-outcome').classList.add('hidden');
+                document.getElementById('input-photo').value = "";
+                document.getElementById('input-notes').value = "";
+                
+                await loadMasterBusinesses();
+                showCheckinUI();
+
+            } catch (err) {
+                alert("Check-Out Error: " + (err.message || err));
+            } finally {
+                toggleBtn('checkout', false);
+            }
+        }
+
+        function showCheckinUI() {
+            document.getElementById('view-checkin').classList.remove('hidden-view');
+            document.getElementById('view-checkout').classList.add('hidden-view');
+        }
+
+        function showCheckoutUI() {
+            document.getElementById('view-checkin').classList.add('hidden-view');
+            document.getElementById('view-checkout').classList.remove('hidden-view');
+            document.getElementById('active-merchant').innerText = activeVisit.business;
+            document.getElementById('active-time').innerText = activeVisit.time;
+        }
+
+        function toggleBtn(type, isLoading) {
+            document.getElementById(`btn-${type}`).disabled = isLoading;
+            document.getElementById(`text-${type}`).classList.toggle('hidden', isLoading);
+            document.getElementById(`load-${type}`).classList.toggle('hidden', !isLoading);
+        }
+
+        async function compressImageToBase64(file) {
+            return new Promise((res) => {
+                const reader = new FileReader(); reader.readAsDataURL(file);
+                reader.onload = e => {
+                    const img = new Image(); img.src = e.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas'); let w = img.width, h = img.height; 
+                        const max = 800;
+                        if(w>h && w>max){h*=max/w; w=max;} else if(h>max){w*=max/h; h=max;}
+                        canvas.width = w; canvas.height = h; canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        res(canvas.toDataURL('image/jpeg', 0.5));
+                    };
+                };
+            });
+        }
+    </script>
+</body>
+</html>
