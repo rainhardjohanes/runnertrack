@@ -286,7 +286,7 @@
         }
 
         /** DATA LOADERS **/
-        async function fetchMasterData() {
+async function fetchMasterData() {
             try {
                 masterAreas = (await db.from('master_areas').select('*').order('area_name')).data || [];
                 masterRunners = (await db.from('master_runners').select('*').order('runner_name')).data || [];
@@ -295,20 +295,30 @@
                 masterKitTypes = (await db.from('master_kit_types').select('*')).data || [];
                 masterSdrs = (await db.from('master_sdrs').select('*').order('sdr_name')).data || [];
 
-                if(currentUser.role === 'Staff') {
-                    const myRunner = masterRunners.find(r => r.runner_name === currentUser.runner_name);
+                // PERBAIKAN 1: Gunakan toLowerCase() agar pengecekan role kebal terhadap huruf besar/kecil
+                if(currentUser.role.toLowerCase() === 'staff') {
+                    
+                    // PERBAIKAN 2: Gunakan toLowerCase() untuk pencocokan nama Runner agar lebih akurat
+                    const myRunner = masterRunners.find(r => 
+                        (r.runner_name || '').toLowerCase() === (currentUser.runner_name || '').toLowerCase()
+                    );
+                    
                     const myArea = myRunner ? myRunner.area_name : '';
+                    
                     document.getElementById('input-area').innerHTML = `<option value="${myArea}">${myArea}</option>`;
                     document.getElementById('input-area').disabled = true;
-                    document.getElementById('input-runner').innerHTML = `<option value="${currentUser.runner_name}">${currentUser.runner_name}</option>`;
+                    
+                    const runnerNameDisplay = myRunner ? myRunner.runner_name : currentUser.runner_name;
+                    document.getElementById('input-runner').innerHTML = `<option value="${runnerNameDisplay}">${runnerNameDisplay}</option>`;
                     document.getElementById('input-runner').disabled = true;
+                    
                     filterByArea(); 
                 } else {
                     document.getElementById('input-area').innerHTML = `<option value="">-- Select Area --</option>` + masterAreas.map(a => `<option value="${a.area_name}">${a.area_name}</option>`).join('');
                 }
             } catch(e) { console.error("Offline or Failed fetching master data.", e); }
         }
-
+        
         function filterByArea() {
             const area = document.getElementById('input-area').value;
             if(currentUser.role.toLowerCase() === 'admin') {
