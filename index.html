@@ -765,11 +765,18 @@ async function processSinglePayload(p) {
             // BUG 1 FIXED: Kita tidak lagi upload gambar di dalam fungsi loop ini. 
             // Gambar sudah di-upload di fungsi utama, sehingga p.proof_photo sudah matang.
 
+            // Peta dinamis dari local sd_qty ke kolom spesifik Supabase
+            const qtyDrop = p.phase === 'Phase 2' ? (p.sd_qty || 0) : 0;
+            const qtyPickup = p.phase === 'Phase 3' ? (p.sd_qty || 0) : 0;
+
             const { error: dbErr } = await db.from('transactions').insert([{
                 sdr_name: p.sdr_name, area: p.area, phase: p.phase, runner_name: p.runner_name, business_name: p.business_name, 
-                kit_id: p.kit_id, kit_type: p.kit_type, sd_qty: p.sd_qty, sd_uploaded: p.sd_uploaded,
+                kit_id: p.kit_id, kit_type: p.kit_type, 
+                sd_drop_qty: qtyDrop, 
+                sd_pickup_qty: qtyPickup, 
+                sd_uploaded: p.sd_uploaded,
                 gps_location: p.gps_location, device_condition: p.device_condition, missing_or_issue: p.missing_or_issue, 
-                proof_photo: p.proof_photo, // <-- Ambil langsung string URL-nya
+                proof_photo: p.proof_photo, 
                 created_at: p.created_at, other_item: p.other_item, pickup_time: p.pickup_time, drop_off_time: p.drop_off_time
             }]);
             
@@ -1054,7 +1061,9 @@ async function fetchData() {
                     <li class="p-6 flex justify-between items-center hover:bg-slate-50 ${trx.is_offline ? 'bg-amber-50/50' : ''}">
                         <div class="space-y-1">
                             <p class="font-black text-slate-800 text-base">${trx.business_name} ${trx.is_offline ? '<span class="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded ml-2 shadow-sm uppercase tracking-widest"><i class="fa-solid fa-clock mr-1"></i>Pending</span>' : ''}</p>
-                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-tighter">${trx.runner_name} &bull; ${trx.kit_id || trx.sd_qty+' SD'}</p>
+                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-tighter">
+                                ${trx.runner_name} &bull; ${trx.kit_id || (trx.phase === 'Phase 2' ? (trx.sd_drop_qty || trx.sd_qty || 0) : (trx.sd_pickup_qty || trx.sd_qty || 0)) + ' SD'}
+                            </p>
                             ${pairingBadgeHTML}
                         </div>
                         <span class="text-[10px] font-black bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 uppercase tracking-widest">${trx.phase}</span>
