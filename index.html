@@ -223,7 +223,7 @@
         const db = window.supabase.createClient('https://ksdulyitxvtfvxgoqotd.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZHVseWl0eHZ0ZnZ4Z29xb3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1ODgzNzEsImV4cCI6MjA5MTE2NDM3MX0.nJ4lUtAKKBt_NQu0vZo8Dn6R7GfuE4qpgEfGYkkvh40');
         
         let currentUser = null;
-        let globalTransactions = [], globalKitMap = new Map();
+        let globalTransactions = [];
         let masterAreas = [], masterRunners = [], masterBusinesses = [], masterKitsData = [], masterKitTypes = [], masterSdrs = [];
         let selectedKits = []; 
         
@@ -947,10 +947,6 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                         if (phase === 'Phase 1') {
                             let actualStatus = kMaster ? (kMaster.status_deployment || 'Available') : 'Available';
                             let actualLocation = kMaster ? (kMaster.last_location || 'Warehouse') : 'Warehouse';
-                            if (globalKitMap.has(kId)) {
-                                actualStatus = globalKitMap.get(kId).status;
-                                actualLocation = globalKitMap.get(kId).location;
-                            }
 
                             if (actualStatus !== 'Available' && actualLocation !== business && actualLocation !== 'Warehouse') {
                                 payloadsToProcess.push({
@@ -975,9 +971,6 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                             if (phase === 'Phase 1') {
                                 let pActualStatus = pairedMaster ? (pairedMaster.status_deployment || 'Available') : 'Available';
                                 let pActualLoc = pairedMaster ? (pairedMaster.last_location || 'Warehouse') : 'Warehouse';
-                                if (globalKitMap.has(pairedId)) {
-                                    pActualStatus = globalKitMap.get(pairedId).status; pActualLoc = globalKitMap.get(pairedId).location;
-                                }
                                 if (pActualStatus !== 'Available' && pActualLoc !== business && pActualLoc !== 'Warehouse') {
                                     payloadsToProcess.push({
                                         ...basePayload, proof_photo: null, photo_b64: null,
@@ -1042,27 +1035,6 @@ async function fetchData() {
                 if(currentUser.role === 'Staff') query = query.eq('runner_name', currentUser.runner_name);
                 globalTransactions = (await query).data || [];
                 
-                // 2. BACA DARI YANG TERBARU (Descending)
-                const { data: allLogs } = await db.from('transactions')
-                    .select('kit_id, phase, business_name, device_condition') // <-- TAMBAHAN: Tarik history kondisi
-                    .order('created_at', { ascending: false }) 
-                    .limit(3000);
-                
-                globalKitMap.clear();
-                if (allLogs) {
-                    allLogs.forEach(log => {
-                        if (log.kit_id && !globalKitMap.has(log.kit_id)) {
-                            let loc = log.business_name;
-                            let stat = 'Deployed';
-                            if (log.phase === 'Phase 4' || log.phase === 'Phase 3') {
-                                loc = 'Warehouse'; stat = 'Available';
-                            }
-                            // Simpan status, lokasi, dan kondisi log terakhir
-                            globalKitMap.set(log.kit_id, { location: loc, status: stat, condition: log.device_condition });
-                        }
-                    });
-                }
-
                 let offlineQueue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
                 let offlineTrx = offlineQueue.map(q => ({...q, is_offline: true}));
                 let combinedDisplay = [...offlineTrx, ...globalTransactions]; 
@@ -1093,27 +1065,15 @@ async function fetchData() {
         }
 
 function getKitLocation(kitId) {
-    // 1. Cek dari log transaksi terbaru (globalKitMap) yang digenerate fetchData()
-    if (globalKitMap.has(kitId)) {
-        const data = globalKitMap.get(kitId);
-        return { 
-            loc: data.location, 
-            isOffice: data.location === 'Warehouse' 
-        };
-    }
-
-    
-    
-    // 2. Jika belum pernah ada transaksi sama sekali, baca dari master data
     const masterInfo = masterKitsData.find(k => k.kit_id === kitId);
+    
     if (masterInfo && masterInfo.last_location) {
         return { 
             loc: masterInfo.last_location, 
-            isOffice: masterInfo.last_location === 'Warehouse' 
+            isOffice: masterInfo.last_location.toLowerCase() === 'warehouse' 
         };
     }
     
-    // 3. Fallback default
     return { loc: 'Warehouse', isOffice: true };
 }
 
