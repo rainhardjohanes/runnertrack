@@ -318,7 +318,7 @@ async function fetchMasterData() {
                 }
             } catch(e) { console.error("Offline or Failed fetching master data.", e); }
         }
-        
+
         function filterByArea() {
             const area = document.getElementById('input-area').value;
             if(currentUser.role.toLowerCase() === 'admin') {
@@ -350,8 +350,9 @@ async function fetchMasterData() {
 
 function renderKitList() {
     const phase = document.getElementById('input-phase').value;
-    const search = document.getElementById('search-kit').value.toUpperCase();
+    const search = document.getElementById('search-kit').value.toUpperCase().trim();
     const business = document.getElementById('input-business').value;
+    const currentArea = document.getElementById('input-area').value; // Ambil Area Runner
     const listEl = document.getElementById('list-kit');
 
     if (phase === 'Phase 4' && !business) {
@@ -362,25 +363,33 @@ function renderKitList() {
     }
 
     let filtered = masterKitsData.filter(k => {
-        const searchMatch = search === '' || k.kit_id.toUpperCase().includes(search);
+        // Mencegah aplikasi crash jika kit_id kosong/null di DB
+        const kitIdUpper = (k.kit_id || '').toUpperCase();
+        const searchMatch = search === '' || kitIdUpper.includes(search);
 
         const locData = getKitLocation(k.kit_id) || {};
 
-const actualLocation = (locData.loc || k.last_location || 'Warehouse').toLowerCase();
-const actualCondition = (k.current_status || 'good').toLowerCase();
+        // BIKIN KEBAL SPASI & HURUF BESAR/KECIL dengan toString().toLowerCase().trim()
+        const actualLocation = (locData.loc || k.last_location || 'warehouse').toString().toLowerCase().trim();
+        const actualCondition = (k.current_status || 'good').toString().toLowerCase().trim();
+        const targetBusiness = (business || '').toString().toLowerCase().trim();
+        const kitArea = (k.area_name || '').toString().toLowerCase().trim();
+        const myArea = (currentArea || '').toString().toLowerCase().trim();
 
-        // Phase 1
-if (phase === 'Phase 1') {
-    return actualCondition === 'good'
-        && actualLocation === 'warehouse'
-        && searchMatch;
-}
-        // Phase 4
+        // Phase 1: Harus di Warehouse, Kondisi Good, dan HANYA Kit di Area Runner
+        if (phase === 'Phase 1') {
+            return actualCondition === 'good'
+                && (actualLocation === 'warehouse' || actualLocation === '') // Anggap di warehouse jika DB kosong
+                && kitArea === myArea 
+                && searchMatch;
+        }
+        
+        // Phase 4: Kit harus ada di Merchant yang identik
         if (phase === 'Phase 4') {
-    return business
-        && actualLocation === business.toLowerCase()
-        && searchMatch;
-}
+            return targetBusiness !== ''
+                && actualLocation === targetBusiness
+                && searchMatch;
+        }
 
         return false;
     });
@@ -403,7 +412,6 @@ if (phase === 'Phase 1') {
         }).join('');
     }
 }
-
 
         function selectBusiness(name) {
             document.getElementById('input-business').value = name; document.getElementById('label-business').innerText = name;
@@ -558,32 +566,31 @@ function validateKit() {
             errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
         }
         
-        // Pengecekan Lokasi menggunakan Data Admin
+// Pengecekan Lokasi menggunakan Data Admin
         const locData = getKitLocation(kitId);
 
         if (phase === 'Phase 1') {
-    const actualLocation = (locData.loc || kitMaster.last_location || 'Warehouse').toLowerCase();
-
-    if (actualLocation !== 'warehouse') {
-        errLabel.innerText = `REJECTED: ${kitId} tidak berada di Warehouse (posisi: ${actualLocation}).`;
-        errLabel.classList.remove('hidden');
-        btnSubmit.disabled = true;
-        return;
-    }
-
-}
+            const actualLocation = (locData.loc || kitMaster.last_location || 'warehouse').toString().toLowerCase().trim();
+            if (actualLocation !== 'warehouse' && actualLocation !== '') {
+                errLabel.innerText = `REJECTED: ${kitId} tidak berada di Warehouse (posisi saat ini: ${actualLocation}).`;
+                errLabel.classList.remove('hidden');
+                btnSubmit.disabled = true;
+                return;
+            }
+        }
 
         if (phase === 'Phase 4') {
-    const actualLocation = (locData.loc || kitMaster.last_location || 'Warehouse').toLowerCase();
-
-    if (!business || actualLocation !== business.toLowerCase()) {
-        errLabel.innerText = `REJECTED: ${kitId} tidak berada di ${business}.`;
-        errLabel.classList.remove('hidden');
-        btnSubmit.disabled = true;
-        return;
-    }
-}
-
+            const actualLocation = (locData.loc || kitMaster.last_location || 'warehouse').toString().toLowerCase().trim();
+            const targetBusiness = (business || '').toString().toLowerCase().trim();
+            
+            if (!targetBusiness || actualLocation !== targetBusiness) {
+                errLabel.innerText = `REJECTED: ${kitId} tidak berada di ${business}.`;
+                errLabel.classList.remove('hidden');
+                btnSubmit.disabled = true;
+                return;
+            }
+        }
+        
         const recipe = masterKitTypes.find(t => t.type_name === kitMaster.kit_type);
         let itemsHTML = '';
         if(recipe) {
@@ -772,13 +779,11 @@ async function compressImageToBase64(file) {
         }
 
 async function processSinglePayload(p) {
-            // BUG 1 FIXED: Kita tidak lagi upload gambar di dalam fungsi loop ini. 
-            // Gambar sudah di-upload di fungsi utama, sehingga p.proof_photo sudah matang.
-
             // Peta dinamis dari local sd_qty ke kolom spesifik Supabase
             const qtyDrop = p.phase === 'Phase 2' ? (p.sd_qty || 0) : 0;
             const qtyPickup = p.phase === 'Phase 3' ? (p.sd_qty || 0) : 0;
 
+            // 1. HANYA FOKUS MENYIMPAN KE LOG TRANSACTIONS
             const { error: dbErr } = await db.from('transactions').insert([{
                 sdr_name: p.sdr_name, area: p.area, phase: p.phase, runner_name: p.runner_name, business_name: p.business_name, 
                 kit_id: p.kit_id, kit_type: p.kit_type, 
@@ -792,24 +797,10 @@ async function processSinglePayload(p) {
             
             if (dbErr) throw dbErr;
 
-            // --- UPDATE OTOMATIS TABEL MASTER KITS ---
-            if (p.kit_id) {
-                let updateFields = {};
-                
-                if (p.phase === 'Phase 1') {
-                    updateFields = { status_deployment: 'Deployed', last_location: p.business_name };
-                } else if (p.phase === 'Phase 4') {
-                    updateFields = { status_deployment: 'Available', last_location: 'Warehouse' };
-                }
-
-                if (p.device_condition === 'Damaged') { updateFields.current_status = 'Damaged'; }
-
-                if (Object.keys(updateFields).length > 0) {
-                    await db.from('master_kits').update(updateFields).eq('kit_id', p.kit_id);
-                }
-            }
+            // BLOK KODE "UPDATE OTOMATIS TABEL MASTER KITS" TELAH DIHAPUS DARI SINI
+            // Pembaruan status kit sekarang akan diserahkan sepenuhnya ke Supabase (Database Trigger).
         }
-
+        
 
 async function syncOfflineQueue() {
             if (!navigator.onLine) { alert("You are still offline. Please find a better signal."); return; }
