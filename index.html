@@ -291,7 +291,7 @@ async function fetchMasterData() {
                 masterAreas = (await db.from('master_areas').select('*').order('area_name')).data || [];
                 masterRunners = (await db.from('master_runners').select('*').order('runner_name')).data || [];
                 masterBusinesses = (await db.from('master_businesses').select('*').order('business_name')).data || [];
-                masterKitsData = (await db.from('master_kits').select('*').order('kit_id')).data || [];
+                masterKitsData = []; // Kosongkan di awal agar aplikasi terbuka dalam 1 detik
                 masterKitTypes = (await db.from('master_kit_types').select('*')).data || [];
                 masterSdrs = (await db.from('master_sdrs').select('*').order('sdr_name')).data || [];
 
@@ -442,14 +442,18 @@ function renderKitList() {
             renderSelectedKits(); validateKit();
         }
 
-        function resetKit() {
-            selectedKits = [];
-            if (document.getElementById('selected-kits-container')) document.getElementById('selected-kits-container').innerHTML = '';
-            document.getElementById('input-kit').value = ""; 
-            document.getElementById('search-kit').value = "";
-            validateKit();
-        }
-
+function resetKit() {
+    selectedKits = [];
+    if (document.getElementById('selected-kits-container')) document.getElementById('selected-kits-container').innerHTML = '';
+    document.getElementById('input-kit').value = ""; 
+    document.getElementById('search-kit').value = "";
+    
+    // PANGGIL KURIR CERDAS DI SINI
+    // Setiap kali form direset (ganti phase/merchant), sistem hanya menarik 5-10 baris data dari Supabase
+    fetchDynamicKits();
+    
+    validateKit();
+}
         function openAddBizModal() {
             const area = document.getElementById('input-area').value;
             if(!area) { alert("Please select an Area first!"); return; }
@@ -1031,12 +1035,56 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
             finally { btnLoad.classList.add('hidden'); document.getElementById('btn-submit').disabled = false; }
         });
         
+        async function fetchDynamicKits() {
+    const phase = document.getElementById('input-phase').value;
+    const business = document.getElementById('input-business').value;
+    const area = document.getElementById('input-area').value;
+
+    // Jika bukan Phase 1 atau Phase 4, bersihkan memori
+    if (phase !== 'Phase 1' && phase !== 'Phase 4') {
+        masterKitsData = []; 
+        renderKitList(); 
+        return; 
+    }
+
+    try {
+        if (phase === 'Phase 1') {
+            // 1. Tarik HANYA Kit di Warehouse (Termasuk yang field last_location-nya kosong/null)
+            const { data: whKits } = await db.from('master_kits')
+                .select('*')
+                .eq('area_name', area)
+                .or('last_location.eq.Warehouse,last_location.eq.warehouse,last_location.is.null');
+                
+            // 2. Tarik Kit di Merchant (HANYA untuk mengecek kebutuhan Auto-Pairing)
+            let bizKits = [];
+            if (business) {
+                const res = await db.from('master_kits').select('*').eq('last_location', business);
+                bizKits = res.data || [];
+            }
+            
+            masterKitsData = [...(whKits || []), ...bizKits];
+            
+        } else if (phase === 'Phase 4') {
+            // HANYA tarik Kit yang saat ini terdata berada di Merchant tersebut
+            if (business) {
+                const { data: p4Kits } = await db.from('master_kits')
+                    .select('*')
+                    .eq('last_location', business);
+                masterKitsData = p4Kits || [];
+            } else {
+                masterKitsData = [];
+            }
+        }
+    } catch (e) {
+        console.error("Gagal menarik data kit dinamis dari Supabase:", e);
+    }
+    
+    renderKitList(); // Segarkan tampilan List Kit di layar HP
+}
+
         
 async function fetchData() {
             try {
-                // 0. WAJIB REFRESH MASTER KITS JUGA! Agar ingatan HP sama dengan Admin
-                const { data: freshKits } = await db.from('master_kits').select('*').order('kit_id');
-                if(freshKits) masterKitsData = freshKits;
 
                 // 1. Ambil data log untuk ditampilkan di UI (limit 50)
                 let query = db.from('transactions').select('*').order('created_at', { ascending: false }).limit(50); 
