@@ -115,20 +115,22 @@
                 <div id="field-checklist" class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
                     <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest mb-4 border-b pb-3">Kit Contents: <span id="kit-type-label" class="text-slate-400"></span></label>
                     <div id="checklist-items" class="space-y-3 text-sm mb-6"></div>
-                    <div class="mb-5">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 tracking-widest">Physical Integrity *</label>
-                        <input type="hidden" id="input-condition">
-                        <div class="flex gap-3">
-                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-condition', 'Good')">GOOD</button>
-                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-condition', 'Damaged')">DAMAGED</button>
+                    <div id="global-condition-block">
+                        <div class="mb-5">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 tracking-widest">Physical Integrity *</label>
+                            <input type="hidden" id="input-condition">
+                            <div class="flex gap-3">
+                                <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-condition', 'Good')">GOOD</button>
+                                <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-condition', 'Damaged')">DAMAGED</button>
+                            </div>
                         </div>
-                    </div>
-                    <div>
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 tracking-widest">Audit Checklist Match? *</label>
-                        <input type="hidden" id="input-match">
-                        <div class="flex gap-3">
-                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-match', 'Yes')">YES</button>
-                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-match', 'No')">NO</button>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 tracking-widest">Audit Checklist Match? *</label>
+                            <input type="hidden" id="input-match">
+                            <div class="flex gap-3">
+                                <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-match', 'Yes')">YES</button>
+                                <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-match', 'No')">NO</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -700,10 +702,35 @@ function validateKit() {
         const textColor = badge.colorClass.split(' ')[1]; 
 
         let uploadToggleHTML = '';
+        let perKitConditionHTML = '';
+
         if (phase === 'Phase 4') {
+            document.getElementById('global-condition-block').classList.add('hidden');
+            
+            perKitConditionHTML = `
+                <div class="mt-4 border-t border-slate-100 pt-4">
+                    <div class="mb-4">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Condition (${kitId}) *</label>
+                        <input type="hidden" id="condition-${kitId}">
+                        <div class="flex gap-2">
+                            <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-slate-300 rounded-xl font-bold text-slate-500 text-xs" onclick="setBtn(this, 'condition-${kitId}', 'Good')">GOOD</button>
+                            <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-slate-300 rounded-xl font-bold text-slate-500 text-xs" onclick="setBtn(this, 'condition-${kitId}', 'Damaged')">DAMAGED</button>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Checklist Match (${kitId})? *</label>
+                        <input type="hidden" id="match-${kitId}">
+                        <div class="flex gap-2">
+                            <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-slate-300 rounded-xl font-bold text-slate-500 text-xs" onclick="setBtn(this, 'match-${kitId}', 'Yes')">YES</button>
+                            <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-slate-300 rounded-xl font-bold text-slate-500 text-xs" onclick="setBtn(this, 'match-${kitId}', 'No')">NO</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
             uploadToggleHTML = `
-                <div class="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                    <label class="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2">Apakah SD Kit ini di-Upload? *</label>
+                <div class="p-4 bg-amber-50 border border-amber-200 rounded-xl mt-2">
+                    <label class="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2">Upload SD (${kitId})? *</label>
                     <input type="hidden" id="upload-status-${kitId}">
                     <div class="flex gap-3">
                         <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-amber-300 rounded-xl font-bold text-amber-700 text-xs" onclick="setBtn(this, 'upload-status-${kitId}', 'Yes')">YES</button>
@@ -711,6 +738,9 @@ function validateKit() {
                     </div>
                 </div>
             `;
+        } else {
+            let gb = document.getElementById('global-condition-block');
+            if(gb) gb.classList.remove('hidden');
         }
 
         checklistHTML += `
@@ -723,6 +753,7 @@ function validateKit() {
                     ${itemsHTML}
                 </div>
                 ${extraItemsHTML}
+                ${perKitConditionHTML}
                 ${uploadToggleHTML} 
             </div>
         `;
@@ -879,15 +910,15 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                 if (parseInt(uploadedQtyRaw) > parseInt(sdQtyRaw)) { alert("Jumlah Upload tidak boleh lebih besar dari Total SD!"); return; }
             } else if (phase === 'Phase 4') {
                 if (!hasKits) { alert("At least one Kit ID is required!"); return; }
-                if (!condition) { alert("Physical Integrity (Good/Damaged) is required!"); return; }
-                if (!match) { alert("Audit Checklist Match (Yes/No) is required!"); return; }
-                // Validasi setiap kit apakah sudah dipilih YES/NO
+                // Validasi per-kit untuk Phase 4
                 for(let kitId of selectedKits) {
-                    let btnStatus = document.getElementById('upload-status-' + kitId);
-                    if (!btnStatus || !btnStatus.value) {
-                        alert("Pilih status Upload SD untuk Kit " + kitId + " (YES/NO)!");
-                        return;
-                    }
+                    let kCond = document.getElementById('condition-' + kitId);
+                    let kMatch = document.getElementById('match-' + kitId);
+                    let kUp = document.getElementById('upload-status-' + kitId);
+                    
+                    if (!kCond || !kCond.value) { alert("Pilih Condition (Good/Damaged) untuk Kit " + kitId + "!"); return; }
+                    if (!kMatch || !kMatch.value) { alert("Pilih Checklist Match (Yes/No) untuk Kit " + kitId + "!"); return; }
+                    if (!kUp || !kUp.value) { alert("Pilih status Upload SD untuk Kit " + kitId + " (YES/NO)!"); return; }
                 }
             }
 
@@ -917,12 +948,13 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                     sdr_name: phase === 'Phase 1' ? sdrNameVal : null,
                     area: document.getElementById('input-area').value, phase: phase, runner_name: document.getElementById('input-runner').value,
                     business_name: business, gps_location: document.getElementById('input-gps').value, 
-                    device_condition: condition, missing_or_issue: document.getElementById('input-issue').value, 
-                    proof_photo: finalPhotoUrl,         // Jika online, ini terisi URL matang. Jika offline, ini isinya null.
-                    photo_b64: photoBase64ForOffline,   // Disiapkan jika masuk Offline Queue
+                    device_condition: phase === 'Phase 4' ? null : condition, // Null-kan sementara untuk Phase 4
+                    missing_or_issue: document.getElementById('input-issue').value, 
+                    proof_photo: finalPhotoUrl,
+                    photo_b64: photoBase64ForOffline,
                     created_at: new Date().toISOString(), other_item: document.getElementById('input-other-item').value, 
-                    pickup_time: document.getElementById('input-pickup-time').value || null,   // BUG 3 FIXED
-                    drop_off_time: document.getElementById('input-dropoff-time').value || null // BUG 3 FIXED
+                    pickup_time: document.getElementById('input-pickup-time').value || null,
+                    drop_off_time: document.getElementById('input-dropoff-time').value || null
                 };
 
                 let payloadsToProcess = [];
@@ -951,9 +983,11 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                         }
 
                         let kitUploadedCount = 0;
+                        let kitCondition = null;
                         if (phase === 'Phase 4') {
                             let isUp = document.getElementById('upload-status-' + kId).value;
                             kitUploadedCount = (isUp === 'Yes') ? 1 : 0;
+                            kitCondition = document.getElementById('condition-' + kId).value; // Ambil nilai per-kit
                         }
 
                         if (phase === 'Phase 1') {
@@ -963,7 +997,7 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                             if (actualStatus !== 'Available' && actualLocation !== business && actualLocation !== 'Warehouse') {
                                 payloadsToProcess.push({
                                     ...basePayload,
-                                    proof_photo: null, photo_b64: null, // Log auto-return TIDAK BUTUH upload foto lagi
+                                    proof_photo: null, photo_b64: null,
                                     id: 'auto_p4_' + Date.now() + '_' + i,
                                     phase: 'Phase 4', business_name: actualLocation, sdr_name: null, kit_id: kId,
                                     kit_type: kMaster ? kMaster.kit_type : null, sd_qty: null, sd_uploaded: 0,
@@ -972,7 +1006,15 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                             }
                         }
 
-                        let mainPayload = { ...basePayload, id: 'local_' + Date.now() + '_' + i, kit_id: kId, kit_type: kMaster ? kMaster.kit_type : null, sd_qty: null, sd_uploaded: kitUploadedCount };
+                        let mainPayload = { 
+                            ...basePayload, 
+                            id: 'local_' + Date.now() + '_' + i, 
+                            kit_id: kId, 
+                            kit_type: kMaster ? kMaster.kit_type : null, 
+                            sd_qty: null, 
+                            sd_uploaded: kitUploadedCount 
+                        };
+                        if (phase === 'Phase 4') mainPayload.device_condition = kitCondition; // Masukkan nilai individualnya
                         if (pairStatusText) mainPayload.other_item = basePayload.other_item ? `${basePayload.other_item} | [${pairStatusText}]` : `[${pairStatusText}]`;
                         payloadsToProcess.push(mainPayload);
 
@@ -993,11 +1035,13 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                                 }
                             }
 
-                            payloadsToProcess.push({
+                            let pairPayload = {
                                 ...basePayload, id: 'local_pair_' + Date.now() + '_' + i, kit_id: pairedId, kit_type: pairedMaster ? pairedMaster.kit_type : 'Paired Device',
                                 sd_qty: null, sd_uploaded: kitUploadedCount,
                                 missing_or_issue: (basePayload.missing_or_issue ? basePayload.missing_or_issue + " | " : "") + `[Auto-Paired with ${kId}]`
-                            });
+                            };
+                            if (phase === 'Phase 4') pairPayload.device_condition = kitCondition; // Pasangkan nilainya ke alat yg pair juga
+                            payloadsToProcess.push(pairPayload);
                         }
                     }
                 } 
