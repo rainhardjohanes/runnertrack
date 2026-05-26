@@ -826,8 +826,17 @@ async function processSinglePayload(p) {
                 sd_pickup_qty: qtyPickup, 
                 sd_uploaded: p.sd_uploaded,
                 gps_location: p.gps_location, device_condition: p.device_condition, missing_or_issue: p.missing_or_issue, 
-                proof_photo: p.proof_photo, 
-                created_at: p.created_at, other_item: p.other_item, pickup_time: p.pickup_time, drop_off_time: p.drop_off_time
+                proof_photo: p.proof_photo,
+
+client_tx_id: p.client_tx_id,
+
+                event_time: p.event_time,
+
+operational_date:
+    p.operational_date,
+
+created_at:
+    p.created_at, other_item: p.other_item, pickup_time: p.pickup_time, drop_off_time: p.drop_off_time
             }]);
             
             if (dbErr) throw dbErr;
@@ -863,7 +872,31 @@ async function syncOfflineQueue() {
                         queue[i].photo_b64 = null; // Kosongkan base64 agar ringan
                     }
                     await processSinglePayload(queue[i]); 
-                } catch (e) { remainingQueue.push(queue[i]); }
+                } catch (e) {
+
+if (
+
+    e.code === '23505'
+
+    ||
+
+    (
+        e.message &&
+        (
+            e.message.toLowerCase().includes('duplicate')
+            ||
+            e.message.toLowerCase().includes('unique')
+        )
+    )
+
+)
+
+{
+        continue;
+    }
+
+    remainingQueue.push(queue[i]);
+}
             }
 
             localStorage.setItem('runner_sync_queue', JSON.stringify(remainingQueue));
@@ -952,7 +985,79 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                     missing_or_issue: document.getElementById('input-issue').value, 
                     proof_photo: finalPhotoUrl,
                     photo_b64: photoBase64ForOffline,
-                    created_at: new Date().toISOString(), other_item: document.getElementById('input-other-item').value, 
+                    
+                    created_at: new Date().toISOString(),
+
+event_time: (() => {
+
+    const pickup =
+        document.getElementById('input-pickup-time').value;
+
+    const dropoff =
+        document.getElementById('input-dropoff-time').value;
+
+    const chosenTime =
+        dropoff || pickup;
+
+    const now = new Date();
+
+    if (!chosenTime) {
+        return now.toISOString();
+    }
+
+    const [hh, mm] =
+        chosenTime.split(':');
+
+    const localDate = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        parseInt(hh),
+        parseInt(mm),
+        0,
+        0
+    );
+
+    return localDate.toISOString();
+
+})(),
+
+operational_date: (() => {
+
+    const pickup =
+        document.getElementById('input-pickup-time').value;
+
+    const dropoff =
+        document.getElementById('input-dropoff-time').value;
+
+    const chosenTime =
+        dropoff || pickup;
+
+    const now = new Date();
+
+    if (!chosenTime) {
+        return now.toLocaleDateString('en-CA');
+    }
+
+    const [hh, mm] =
+        chosenTime.split(':');
+
+    const localDate = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        parseInt(hh),
+        parseInt(mm),
+        0,
+        0
+    );
+
+    return localDate.toLocaleDateString('en-CA');
+
+})(),
+    
+    
+    other_item: document.getElementById('input-other-item').value, 
                     pickup_time: document.getElementById('input-pickup-time').value || null,
                     drop_off_time: document.getElementById('input-dropoff-time').value || null
                 };
@@ -960,15 +1065,34 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                 let payloadsToProcess = [];
 
                 // --- LOGIC PEMISAHAN LOG PHASE 3 ---
-                if (phase === 'Phase 3') {
-                    let totalSd = parseInt(sdQtyRaw) || 0;
-                    let upSd = parseInt(uploadedQtyRaw) || 0;
-                    let notUpSd = totalSd - upSd;
+if (phase === 'Phase 3') {
 
-                    if (upSd > 0) payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_up', sd_qty: upSd, sd_uploaded: upSd, kit_id: null, kit_type: null });
-                    if (notUpSd > 0) payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_noup', sd_qty: notUpSd, sd_uploaded: 0, kit_id: null, kit_type: null });
-                    if (upSd === 0 && notUpSd === 0) payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now() + '_zero', sd_qty: 0, sd_uploaded: 0, kit_id: null, kit_type: null });
-                } 
+    let totalSd =
+        parseInt(sdQtyRaw) || 0;
+
+    let upSd =
+        parseInt(uploadedQtyRaw) || 0;
+
+    payloadsToProcess.push({
+
+        ...basePayload,
+
+        client_tx_id:
+            crypto.randomUUID(),
+
+        sd_qty:
+            totalSd,
+
+        sd_uploaded:
+            upSd,
+
+        kit_id:
+            null,
+
+        kit_type:
+            null
+    });
+}
                 // --- LOGIC PHASE 1 & PHASE 4 (PER KIT) ---
                 else if (selectedKits.length > 0 && (phase === 'Phase 1' || phase === 'Phase 4')) {
                     for (let i = 0; i < selectedKits.length; i++) {
@@ -995,11 +1119,24 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                             let actualLocation = kMaster ? (kMaster.last_location || 'Warehouse') : 'Warehouse';
 
                             if (actualStatus !== 'Available' && actualLocation !== business && actualLocation !== 'Warehouse') {
-                                payloadsToProcess.push({
-                                    ...basePayload,
-                                    proof_photo: null, photo_b64: null,
-                                    id: 'auto_p4_' + Date.now() + '_' + i,
-                                    phase: 'Phase 4', business_name: actualLocation, sdr_name: null, kit_id: kId,
+payloadsToProcess.push({
+
+    ...basePayload,
+
+    client_tx_id:
+        crypto.randomUUID(),
+
+    proof_photo:
+        null,
+
+    photo_b64:
+        null,
+
+    phase:
+        'Phase 4',
+        
+        
+    business_name: actualLocation, sdr_name: null, kit_id: kId,
                                     kit_type: kMaster ? kMaster.kit_type : null, sd_qty: null, sd_uploaded: 0,
                                     missing_or_issue: '[SYSTEM AUTO-RETURN] Ditarik paksa via Admin ke ' + business, other_item: ''
                                 });
@@ -1007,13 +1144,24 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                         }
 
                         let mainPayload = { 
-                            ...basePayload, 
-                            id: 'local_' + Date.now() + '_' + i, 
-                            kit_id: kId, 
-                            kit_type: kMaster ? kMaster.kit_type : null, 
-                            sd_qty: null, 
-                            sd_uploaded: kitUploadedCount 
-                        };
+
+    ...basePayload,
+
+    client_tx_id:
+        crypto.randomUUID(),
+
+    kit_id:
+        kId,
+
+    kit_type:
+        kMaster ? kMaster.kit_type : null,
+
+    sd_qty:
+        null,
+
+    sd_uploaded:
+        kitUploadedCount
+};
                         if (phase === 'Phase 4') mainPayload.device_condition = kitCondition; // Masukkan nilai individualnya
                         if (pairStatusText) mainPayload.other_item = basePayload.other_item ? `${basePayload.other_item} | [${pairStatusText}]` : `[${pairStatusText}]`;
                         payloadsToProcess.push(mainPayload);
@@ -1026,9 +1174,23 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                                 let pActualStatus = pairedMaster ? (pairedMaster.status_deployment || 'Available') : 'Available';
                                 let pActualLoc = pairedMaster ? (pairedMaster.last_location || 'Warehouse') : 'Warehouse';
                                 if (pActualStatus !== 'Available' && pActualLoc !== business && pActualLoc !== 'Warehouse') {
-                                    payloadsToProcess.push({
-                                        ...basePayload, proof_photo: null, photo_b64: null,
-                                        id: 'auto_p4_pair_' + Date.now() + '_' + i, phase: 'Phase 4', business_name: pActualLoc, sdr_name: null, kit_id: pairedId,
+payloadsToProcess.push({
+
+    ...basePayload,
+
+    client_tx_id:
+        crypto.randomUUID(),
+
+    proof_photo:
+        null,
+
+    photo_b64:
+        null,
+
+    phase:
+        'Phase 4',
+        
+        business_name: pActualLoc, sdr_name: null, kit_id: pairedId,
                                         kit_type: pairedMaster ? pairedMaster.kit_type : null, sd_qty: null, sd_uploaded: 0,
                                         missing_or_issue: '[SYSTEM AUTO-RETURN] Paired Device ditarik paksa via Admin', other_item: ''
                                     });
@@ -1036,10 +1198,29 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                             }
 
                             let pairPayload = {
-                                ...basePayload, id: 'local_pair_' + Date.now() + '_' + i, kit_id: pairedId, kit_type: pairedMaster ? pairedMaster.kit_type : 'Paired Device',
-                                sd_qty: null, sd_uploaded: kitUploadedCount,
-                                missing_or_issue: (basePayload.missing_or_issue ? basePayload.missing_or_issue + " | " : "") + `[Auto-Paired with ${kId}]`
-                            };
+
+    ...basePayload,
+
+    client_tx_id:
+        crypto.randomUUID(),
+
+    kit_id:
+        pairedId,
+
+    kit_type:
+        pairedMaster ? pairedMaster.kit_type : 'Paired Device',
+
+    sd_qty:
+        null,
+
+    sd_uploaded:
+        kitUploadedCount,
+
+    missing_or_issue:
+        (basePayload.missing_or_issue
+            ? basePayload.missing_or_issue + " | "
+            : "") + `[Auto-Paired with ${kId}]`
+};
                             if (phase === 'Phase 4') pairPayload.device_condition = kitCondition; // Pasangkan nilainya ke alat yg pair juga
                             payloadsToProcess.push(pairPayload);
                         }
@@ -1048,7 +1229,25 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
                 // --- LOGIC PHASE 2 ---
                 else {
                     let phase2SdQty = phase === 'Phase 2' ? parseInt(sdQtyRaw) : null;
-                    payloadsToProcess.push({ ...basePayload, id: 'local_' + Date.now(), kit_id: null, kit_type: null, sd_qty: phase2SdQty, sd_uploaded: 0 });
+                    payloadsToProcess.push({
+
+    ...basePayload,
+
+    client_tx_id:
+        crypto.randomUUID(),
+
+    kit_id:
+        null,
+
+    kit_type:
+        null,
+
+    sd_qty:
+        phase2SdQty,
+
+    sd_uploaded:
+        0
+});
                 }
 
                 // EKSEKUSI PENYIMPANAN
