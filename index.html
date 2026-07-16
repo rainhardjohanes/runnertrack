@@ -36,7 +36,7 @@
             <h1 class="text-xl font-black italic tracking-tighter">RunnerTrack</h1>
             <div class="flex items-center gap-3">
                 <span class="bg-blue-800 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-inner" id="header-role"></span>
-                <a href="/fo" class="text-[10px] bg-blue-800 px-3 py-1.5 rounded-xl text-white font-bold border border-blue-400 hover:bg-blue-700 uppercase tracking-widest mr-2"><i class="fa-solid fa-person-walking mr-1"></i> Mode FO</a><button onclick="logout()" class="text-white bg-blue-700 p-2 rounded-full h-9 w-9 flex items-center justify-center shadow-lg"><i class="fa-solid fa-power-off"></i></button>
+                <button onclick="logout()" class="text-white bg-blue-700 p-2 rounded-full h-9 w-9 flex items-center justify-center shadow-lg"><i class="fa-solid fa-power-off"></i></button>
             </div>
         </header>
 
@@ -59,7 +59,9 @@
         </div>
 
         <div id="view-form" class="p-5 hidden-view">
-            <form id="runnerForm" class="space-y-6">
+            <form
+id="runnerForm"
+class="space-y-6 pb-28">
                 <div class="bg-blue-50 text-blue-800 text-[11px] p-4 rounded-2xl border border-blue-200 flex justify-between items-center">
                     <span><i class="fa-solid fa-location-crosshairs mr-2"></i><span id="gps-status" class="font-bold text-red-600 italic uppercase">GPS Required</span></span>
                     <button type="button" onclick="getGPS()" class="text-blue-700 font-black bg-white px-3 py-1 rounded-full shadow-sm uppercase tracking-tighter">Refresh</button>
@@ -106,7 +108,7 @@
                     <div id="selected-kits-container" class="flex flex-wrap gap-2 mb-2"></div>
                     <input type="hidden" id="input-kit">
                     <button type="button" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left flex justify-between items-center font-bold text-blue-600" onclick="toggleModal('modal-kit')">
-                        <span>+ Add Kit ID...</span>
+                        <span>Select Kit</span>
                         <i class="fa-solid fa-plus"></i>
                     </button>
                     <p id="kit-error" class="text-[11px] text-red-600 font-bold hidden bg-red-50 p-3 rounded-xl border border-red-100 italic"></p>
@@ -115,36 +117,71 @@
                 <div id="field-checklist" class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
                     <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest mb-4 border-b pb-3">Kit Contents: <span id="kit-type-label" class="text-slate-400"></span></label>
                     <div id="checklist-items" class="space-y-3 text-sm mb-6"></div>
-                    <div id="global-condition-block">
-                        <div class="mb-5">
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 tracking-widest">Physical Integrity *</label>
-                            <input type="hidden" id="input-condition">
-                            <div class="flex gap-3">
-                                <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-condition', 'Good')">GOOD</button>
-                                <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-condition', 'Damaged')">DAMAGED</button>
-                            </div>
+                    <div class="mb-5">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 tracking-widest">Physical Integrity *</label>
+                        <input type="hidden" id="input-condition">
+                        <div class="flex gap-3">
+                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-condition', 'Good')">GOOD</button>
+                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-condition', 'Damaged')">DAMAGED</button>
                         </div>
-                        <div>
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 tracking-widest">Audit Checklist Match? *</label>
-                            <input type="hidden" id="input-match">
-                            <div class="flex gap-3">
-                                <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-match', 'Yes')">YES</button>
-                                <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-match', 'No')">NO</button>
-                            </div>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 tracking-widest">Audit Checklist Match? *</label>
+                        <input type="hidden" id="input-match">
+                        <div class="flex gap-3">
+                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-match', 'Yes')">YES</button>
+                            <button type="button" class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400" onclick="setBtn(this, 'input-match', 'No')">NO</button>
                         </div>
                     </div>
                 </div>
 
-                <div id="field-sd" class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
-                    <label id="label-sd" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">SD Count *</label>
-                    <input type="number" id="input-sd" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xl font-black outline-none text-blue-700" placeholder="0">
-                </div>
-
-                <div id="field-sd-upload-qty" class="hidden bg-amber-50 p-6 rounded-[2rem] border border-amber-200 mt-4">
-                    <label class="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2">How many SD to Upload? *</label>
-                    <input type="number" id="input-sd-uploaded-qty" class="w-full p-4 bg-white border border-amber-300 rounded-2xl text-xl font-black outline-none text-amber-800" placeholder="0">
-                </div>
                 
+<div id="field-sd"
+class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
+
+    <label
+    id="label-sd"
+    class="block text-[10px] font-black text-slate-400 uppercase tracking-widest">
+        SD Quantity *
+    </label>
+
+    <input
+    id="input-sd"
+    type="number"
+    min="0"
+    placeholder="Input SD Quantity"
+    class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold">
+
+</div>
+
+<div id="field-sdupload"
+class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
+
+    <label class="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-3">
+        Begin SD Upload Now? *
+    </label>
+
+    <input type="hidden" id="input-sdupload">
+
+    <div class="mt-4 flex gap-3">
+
+
+<button
+type="button"
+class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400"            onclick="setBtn(this,'input-sdupload','Yes')">
+            YES
+        </button>
+
+<button
+type="button"
+class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400"
+            onclick="setBtn(this,'input-sdupload','No')">
+            NO
+        </button>
+
+    </div>
+
+</div>
 
                 <div id="field-commons" class="hidden space-y-6">
                     <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
@@ -161,11 +198,20 @@
                     </div>
                     
                     <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-6">
-                        <div>
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Selfie Verification (Photo) *</label>
-                            <!-- capture="user" forces the front camera (selfie) -->
-                            <input type="file" id="input-photo" accept="image/*" capture="user" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-                        </div>
+<div id="kit-photo-container"></div>
+
+<div id="general-photo-container" class="hidden">
+    <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">
+        Proof Photo *
+    </label>
+
+    <input
+        type="file"
+        id="general-photo"
+        accept="image/*"
+        capture="environment"
+        class="w-full p-3 border rounded-xl">
+</div>
                         <div>
                             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Other Item / Notes (Optional)</label>
                             <input type="text" id="input-other-item" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-sm font-bold" placeholder="E.g., extra cables, keys...">
@@ -222,10 +268,14 @@
     <div id="toast" class="fixed top-10 left-1/2 transform -translate-x-1/2 px-8 py-5 rounded-full shadow-2xl opacity-0 transition-all pointer-events-none z-50 font-black text-xs uppercase tracking-widest">Success!</div>
 
     <script>
-        const db = window.supabase.createClient('https://ksdulyitxvtfvxgoqotd.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZHVseWl0eHZ0ZnZ4Z29xb3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1ODgzNzEsImV4cCI6MjA5MTE2NDM3MX0.nJ4lUtAKKBt_NQu0vZo8Dn6R7GfuE4qpgEfGYkkvh40');
-        
+const { createClient } = window.supabase;
+
+const db = createClient(
+    'https://ezmevzvxqbsvwxufapck.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV6bWV2enZ4cWJzdnd4dWZhcGNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxNzEyNzUsImV4cCI6MjA5OTc0NzI3NX0.mrbmvvU4sKQT3aFLGbtrrqbzKcRPSEViXRmEyfGSGPE'
+);        
         let currentUser = null;
-        let globalTransactions = [];
+        let globalTransactions = [], globalKitMap = new Map();
         let masterAreas = [], masterRunners = [], masterBusinesses = [], masterKitsData = [], masterKitTypes = [], masterSdrs = [];
         let selectedKits = []; 
         
@@ -288,32 +338,22 @@
         }
 
         /** DATA LOADERS **/
-async function fetchMasterData() {
+        async function fetchMasterData() {
             try {
                 masterAreas = (await db.from('master_areas').select('*').order('area_name')).data || [];
                 masterRunners = (await db.from('master_runners').select('*').order('runner_name')).data || [];
                 masterBusinesses = (await db.from('master_businesses').select('*').order('business_name')).data || [];
-                masterKitsData = []; // Kosongkan di awal agar aplikasi terbuka dalam 1 detik
+                masterKitsData = (await db.from('master_kits').select('*').order('kit_id')).data || [];
                 masterKitTypes = (await db.from('master_kit_types').select('*')).data || [];
                 masterSdrs = (await db.from('master_sdrs').select('*').order('sdr_name')).data || [];
 
-                // PERBAIKAN 1: Gunakan toLowerCase() agar pengecekan role kebal terhadap huruf besar/kecil
-                if(currentUser.role.toLowerCase() === 'staff') {
-                    
-                    // PERBAIKAN 2: Gunakan toLowerCase() untuk pencocokan nama Runner agar lebih akurat
-                    const myRunner = masterRunners.find(r => 
-                        (r.runner_name || '').toLowerCase() === (currentUser.runner_name || '').toLowerCase()
-                    );
-                    
+                if(currentUser.role === 'Staff') {
+                    const myRunner = masterRunners.find(r => r.runner_name === currentUser.runner_name);
                     const myArea = myRunner ? myRunner.area_name : '';
-                    
                     document.getElementById('input-area').innerHTML = `<option value="${myArea}">${myArea}</option>`;
                     document.getElementById('input-area').disabled = true;
-                    
-                    const runnerNameDisplay = myRunner ? myRunner.runner_name : currentUser.runner_name;
-                    document.getElementById('input-runner').innerHTML = `<option value="${runnerNameDisplay}">${runnerNameDisplay}</option>`;
+                    document.getElementById('input-runner').innerHTML = `<option value="${currentUser.runner_name}">${currentUser.runner_name}</option>`;
                     document.getElementById('input-runner').disabled = true;
-                    
                     filterByArea(); 
                 } else {
                     document.getElementById('input-area').innerHTML = `<option value="">-- Select Area --</option>` + masterAreas.map(a => `<option value="${a.area_name}">${a.area_name}</option>`).join('');
@@ -350,70 +390,39 @@ async function fetchMasterData() {
             return { icon: '<i class="fa-solid fa-box mr-1"></i>', colorClass: 'bg-slate-100 text-slate-600 border-slate-200' };
         }
 
-function renderKitList() {
-    const phase = document.getElementById('input-phase').value;
-    const search = document.getElementById('search-kit').value.toUpperCase().trim();
-    const business = document.getElementById('input-business').value;
-    const currentArea = document.getElementById('input-area').value; // Ambil Area Runner
-    const listEl = document.getElementById('list-kit');
+        function renderKitList() {
+            const area = document.getElementById('input-area').value;
+            const phase = document.getElementById('input-phase').value;
+            const search = document.getElementById('search-kit').value.toUpperCase();
+            const business = document.getElementById('input-business').value;
+            const listEl = document.getElementById('list-kit');
+            
+            let filtered = masterKitsData.filter(k => {
+                const areaMatch = !area || k.area_name === area;
+                const searchMatch = k.kit_id.includes(search);
+                const conditionMatch = (phase === 'Phase 4') ? true : (k.current_status === 'Good');
+                
+                const kitState = globalKitMap.get(k.kit_id) || { status: 'Available', location: 'Warehouse' };
+                let phaseMatch = true;
+                const isAdmin = currentUser.role.toLowerCase() === 'admin';
+                
+                if (!isAdmin) {
+                    if (phase === 'Phase 1') phaseMatch = (kitState.status === 'Available');
+                    if (phase === 'Phase 4') phaseMatch = (kitState.status === 'Deployed' && kitState.location === business);
+                }
 
-    if (phase === 'Phase 4' && !business) {
-        listEl.innerHTML = `<li class="p-6 text-center text-red-400 text-xs italic">
-            Pilih merchant terlebih dahulu sebelum memilih kit.
-        </li>`;
-        return;
-    }
+                return areaMatch && searchMatch && conditionMatch && phaseMatch;
+            });
 
-    let filtered = masterKitsData.filter(k => {
-        // Mencegah aplikasi crash jika kit_id kosong/null di DB
-        const kitIdUpper = (k.kit_id || '').toUpperCase();
-        const searchMatch = search === '' || kitIdUpper.includes(search);
-
-        const locData = getKitLocation(k.kit_id) || {};
-
-        // BIKIN KEBAL SPASI & HURUF BESAR/KECIL dengan toString().toLowerCase().trim()
-        const actualLocation = (locData.loc || k.last_location || 'warehouse').toString().toLowerCase().trim();
-        const actualCondition = (k.current_status || 'good').toString().toLowerCase().trim();
-        const targetBusiness = (business || '').toString().toLowerCase().trim();
-        const kitArea = (k.area_name || '').toString().toLowerCase().trim();
-        const myArea = (currentArea || '').toString().toLowerCase().trim();
-
-        // Phase 1: Harus di Warehouse, Kondisi Good, dan HANYA Kit di Area Runner
-        if (phase === 'Phase 1') {
-            return actualCondition === 'good'
-                && (actualLocation === 'warehouse' || actualLocation === '') // Anggap di warehouse jika DB kosong
-                && kitArea === myArea 
-                && searchMatch;
+            if(filtered.length === 0) listEl.innerHTML = `<li class="p-10 text-center text-slate-400 text-xs italic">No eligible Good kits found for this location.</li>`;
+            else listEl.innerHTML = filtered.map(k => {
+                const badge = getKitBadge(k.kit_type);
+                return `<li class="p-5 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition" onclick="selectKit('${k.kit_id}')">
+                    <span class="font-black text-slate-800">${k.kit_id}</span>
+                    <span class="text-[9px] font-black uppercase px-2 py-1 rounded border shadow-sm flex items-center ${badge.colorClass}">${badge.icon} ${k.kit_type}</span>
+                </li>`;
+            }).join('');        
         }
-        
-        // Phase 4: Kit harus ada di Merchant yang identik
-        if (phase === 'Phase 4') {
-            return targetBusiness !== ''
-                && actualLocation === targetBusiness
-                && searchMatch;
-        }
-
-        return false;
-    });
-
-    if (filtered.length === 0) {
-        listEl.innerHTML = `<li class="p-8 text-center text-slate-400 text-xs italic">
-            Tidak ada Kit yang tersedia.
-        </li>`;
-    } else {
-        listEl.innerHTML = filtered.map(k => {
-            const badge = getKitBadge(k.kit_type);
-            return `
-            <li class="p-5 hover:bg-slate-50 cursor-pointer flex justify-between items-center"
-                onclick="selectKit('${k.kit_id}')">
-                <span class="font-black">${k.kit_id}</span>
-                <span class="text-[9px] px-2 py-1 rounded ${badge.colorClass}">
-                    ${badge.icon} ${k.kit_type}
-                </span>
-            </li>`;
-        }).join('');
-    }
-}
 
         function selectBusiness(name) {
             document.getElementById('input-business').value = name; document.getElementById('label-business').innerText = name;
@@ -421,41 +430,90 @@ function renderKitList() {
             toggleModal('modal-business'); resetKit();
         }
 
-        function selectKit(id) {
-            if (selectedKits.includes(id)) { alert("Kit ID already added!"); return; }
-            selectedKits.push(id);
-            renderSelectedKits();
-            toggleModal('modal-kit'); validateKit();
-        }
+function selectKit(id) {
 
-        function renderSelectedKits() {
-            const container = document.getElementById('selected-kits-container');
-            container.innerHTML = selectedKits.map(id => `
-                <div class="bg-blue-600 text-white px-3 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-md">
-                    ${id}
-                    <button type="button" onclick="removeKit('${id}')" class="hover:text-red-300"><i class="fa-solid fa-circle-xmark"></i></button>
-                </div>
-            `).join('');
-            document.getElementById('input-kit').value = selectedKits.join(',');
-        }
+    const phase = document.getElementById('input-phase').value;
+
+    if (selectedKits.includes(id)) {
+        alert("Kit ID already added!");
+        return;
+    }
+
+    selectedKits.push(id);
+
+    renderSelectedKits();
+
+    toggleModal('modal-kit');
+
+    validateKit();
+}
+
+function renderSelectedKits() {
+
+    const container = document.getElementById('selected-kits-container');
+    const photoContainer = document.getElementById('kit-photo-container');
+
+    container.innerHTML = '';
+    photoContainer.innerHTML = '';
+
+    selectedKits.forEach(id => {
+
+        container.innerHTML += `
+            <div class="bg-blue-600 text-white px-3 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-md">
+                ${id}
+                <button type="button"
+                    onclick="removeKit('${id}')">
+                    <i class="fa-solid fa-circle-xmark"></i>
+                </button>
+            </div>
+        `;
+
+        photoContainer.innerHTML += `
+<div class="border rounded-2xl p-4 bg-slate-50">
+
+<div class="font-black mb-2">
+${id}
+</div>
+
+<input
+type="file"
+id="photo-${id}"
+accept="image/*"
+capture="environment"
+class="w-full p-3 border rounded-xl mb-3">
+
+<select
+id="upload-${id}"
+class="w-full p-3 border rounded-xl">
+
+<option value="">Upload SD?</option>
+<option value="Yes">Yes</option>
+<option value="No">No</option>
+
+</select>
+
+</div>
+`;
+    });
+
+    document.getElementById('input-kit').value =
+        selectedKits.join(',');
+}
 
         function removeKit(id) {
             selectedKits = selectedKits.filter(k => k !== id);
             renderSelectedKits(); validateKit();
         }
 
-function resetKit() {
-    selectedKits = [];
-    if (document.getElementById('selected-kits-container')) document.getElementById('selected-kits-container').innerHTML = '';
-    document.getElementById('input-kit').value = ""; 
-    document.getElementById('search-kit').value = "";
-    
-    // PANGGIL KURIR CERDAS DI SINI
-    // Setiap kali form direset (ganti phase/merchant), sistem hanya menarik 5-10 baris data dari Supabase
-    fetchDynamicKits();
-    
-    validateKit();
-}
+        function resetKit() {
+            selectedKits = [];
+            if (document.getElementById('selected-kits-container')) document.getElementById('selected-kits-container').innerHTML = '';
+            document.getElementById('kit-photo-container').innerHTML='';
+            document.getElementById('input-kit').value = ""; 
+            document.getElementById('search-kit').value = "";
+            validateKit();
+        }
+
         function openAddBizModal() {
             const area = document.getElementById('input-area').value;
             if(!area) { alert("Please select an Area first!"); return; }
@@ -508,17 +566,21 @@ function resetKit() {
             if(tabName === 'form' && !document.getElementById('input-gps').value) getGPS();
         }
 
-function toggleFormFields() {
+        function toggleFormFields() {
             const phase = document.getElementById('input-phase').value;
-            ['field-kit', 'field-checklist', 'field-sd', 'field-commons', 'field-sd-upload-qty', 'field-sdr'].forEach(id => {
+            ['field-kit', 'field-checklist', 'field-sd', 'field-commons', 'field-sdupload', 'field-sdr'].forEach(id => {
                 const el = document.getElementById(id);
                 if(el) el.classList.add('hidden');
             });
             
+            // --- RESET STATE KEBOCORAN (LEAKAGE) ---
+            // Pastikan input tersembunyi benar-benar kosong saat ganti fase
             document.getElementById('input-condition').value = "";
             document.getElementById('input-match').value = "";
-            document.getElementById('input-sd-uploaded-qty').value = ""; // Reset qty
+            document.getElementById('input-sdupload').value = "";
+            // Hilangkan warna biru/aktif pada tombol toggle YES/NO/GOOD/DAMAGED
             document.querySelectorAll('.btn-toggle').forEach(btn => btn.classList.remove('active'));
+            // ---------------------------------------
 
             const currentTime = new Date().toTimeString().slice(0,5); 
             const pickUpInput = document.getElementById('input-pickup-time');
@@ -526,266 +588,228 @@ function toggleFormFields() {
 
             if (phase === 'Phase 1' || phase === 'Phase 2') { 
                 if(phase === 'Phase 1') { document.getElementById('field-kit').classList.remove('hidden'); document.getElementById('field-sdr').classList.remove('hidden'); }
-                if(phase === 'Phase 2') { document.getElementById('field-sd').classList.remove('hidden'); document.getElementById('label-sd').innerText = "SD Delivered Quantity *"; }
-                
                 document.getElementById('field-commons').classList.remove('hidden');
+
+document.getElementById('general-photo-container').classList.add('hidden');
+
+if(phase === 'Phase 2'){
+    document.getElementById('field-sd').classList.remove('hidden');
+    document.getElementById('label-sd').innerText = "SD Delivered Quantity *";
+    document.getElementById('general-photo-container').classList.remove('hidden');
+}
                 pickUpInput.value = currentTime; dropOffInput.value = "";        
             } 
             else if (phase === 'Phase 3' || phase === 'Phase 4') { 
-                if(phase === 'Phase 3') { 
-                    document.getElementById('field-sd').classList.remove('hidden'); 
-                    document.getElementById('label-sd').innerText = "SD Collected Quantity *"; 
-                    document.getElementById('field-sd-upload-qty').classList.remove('hidden'); // Munculkan input qty upload
-                }
+                if(phase === 'Phase 3') { document.getElementById('field-sd').classList.remove('hidden'); document.getElementById('label-sd').innerText = "SD Collected Quantity *";
+                    document.getElementById('general-photo-container').classList.remove('hidden');
+                 }
                 if(phase === 'Phase 4') { document.getElementById('field-kit').classList.remove('hidden'); }
                 
-                document.getElementById('field-commons').classList.remove('hidden');
+                document.getElementById('field-sdupload').classList.remove('hidden'); document.getElementById('field-commons').classList.remove('hidden');
                 pickUpInput.value = ""; dropOffInput.value = currentTime; 
             }
             resetKit();
         }
-        
-function validateKit() {
-    const phase = document.getElementById('input-phase').value;
-    const business = document.getElementById('input-business').value;
-    const errLabel = document.getElementById('kit-error');
-    const btnSubmit = document.getElementById('btn-submit');
-    
-    errLabel.classList.add('hidden'); btnSubmit.disabled = false; document.getElementById('field-checklist').classList.add('hidden');
-    
-    if(selectedKits.length === 0 || (phase !== 'Phase 1' && phase !== 'Phase 4')) return;
 
-    let checklistHTML = ''; 
-    let usedOrphans = new Set(); 
-
-    for (let kitId of selectedKits) {
-        const kitMaster = masterKitsData.find(k => k.kit_id === kitId);
-
-        if(!kitMaster) { 
-            errLabel.innerText = `ERROR: ID ${kitId} not recognized.`; 
-            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
-        }
-        
-        let actualCondition = (kitMaster.current_status || '').toLowerCase().trim();
-        if(actualCondition === 'damaged') { 
-            errLabel.innerText = `REJECTED: Kit ${kitId} is QUARANTINED (Damaged).`; 
-            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
-        }
-        
-// Pengecekan Lokasi menggunakan Data Admin
-        const locData = getKitLocation(kitId);
-
-        if (phase === 'Phase 1') {
-            const actualLocation = (locData.loc || kitMaster.last_location || 'warehouse').toString().toLowerCase().trim();
-            if (actualLocation !== 'warehouse' && actualLocation !== '') {
-                errLabel.innerText = `REJECTED: ${kitId} tidak berada di Warehouse (posisi saat ini: ${actualLocation}).`;
-                errLabel.classList.remove('hidden');
-                btnSubmit.disabled = true;
-                return;
-            }
-        }
-
-        if (phase === 'Phase 4') {
-            const actualLocation = (locData.loc || kitMaster.last_location || 'warehouse').toString().toLowerCase().trim();
-            const targetBusiness = (business || '').toString().toLowerCase().trim();
+        function validateKit() {
+            const phase = document.getElementById('input-phase').value;
+            const business = document.getElementById('input-business').value;
+            const errLabel = document.getElementById('kit-error');
+            const btnSubmit = document.getElementById('btn-submit');
             
-            if (!targetBusiness || actualLocation !== targetBusiness) {
-                errLabel.innerText = `REJECTED: ${kitId} tidak berada di ${business}.`;
-                errLabel.classList.remove('hidden');
-                btnSubmit.disabled = true;
-                return;
-            }
-        }
-        
-        const recipe = masterKitTypes.find(t => t.type_name === kitMaster.kit_type);
-        let itemsHTML = '';
-        if(recipe) {
-            itemsHTML = recipe.checklist_items.split(',').map(i => {
-                const cleanItem = i.trim();
-                return `
-                <label class="flex items-center space-x-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:bg-blue-50 transition">
-                    <input type="checkbox" name="kit_item_${kitId}" value="${cleanItem}" class="w-5 h-5 text-blue-600 rounded cursor-pointer">
-                    <span class="font-bold text-slate-700 text-sm">${cleanItem}</span>
-                </label>`;
-            }).join('');
-        }
-
-        // --- SMART AUTO-MAPPING LOGIC ---
-        let extraItemsHTML = '';
-        if (recipe && recipe.requires_pairing === true && recipe.paired_with_type) {
-            const targetType = recipe.paired_with_type; 
+            errLabel.classList.add('hidden'); btnSubmit.disabled = false; document.getElementById('field-checklist').classList.add('hidden');
             
-            if (phase === 'Phase 1') {
-                const deployedAtBusiness = masterKitsData.filter(k => 
-                    k.kit_type === targetType && 
-                    (getKitLocation(k.kit_id).loc || '').toLowerCase() === business.toLowerCase()
-                );
+            if(selectedKits.length === 0 || (phase !== 'Phase 1' && phase !== 'Phase 4')) return;
 
-                const availablePairs = masterKitsData.filter(k => {
-    const locData = getKitLocation(k.kit_id) || {};
-    const actualLocation = (locData.loc || k.last_location || 'Warehouse').toLowerCase();
+            const isAdmin = currentUser.role.toLowerCase() === 'admin';
+            let checklistHTML = ''; 
+            let overrideMessages = [];
+            
+            // Variabel untuk menyimpan Wristcam yang sudah otomatis ter-assign di loop ini
+            let usedOrphans = new Set(); 
 
-    return k.kit_type === targetType &&
-        k.area_name === document.getElementById('input-area').value &&
-        actualLocation === 'Warehouse';
-});
-                
-                const availableOrphans = deployedAtBusiness.filter(k => {
-    const alreadyUsed = usedOrphans.has(k.kit_id);
-    const alreadySelected = selectedKits.includes(k.kit_id);
-    return !alreadyUsed && !alreadySelected;
-});
-                
-                let autoSelectedId = "STANDALONE"; 
-                let autoLabel = "";
+            for (let kitId of selectedKits) {
+                const kitMaster = masterKitsData.find(k => k.kit_id === kitId);
+                const kitState = globalKitMap.get(kitId) || { status: 'Available', location: 'Warehouse' };
 
-                if (availableOrphans.length > 0) {
-                    autoSelectedId = availableOrphans[0].kit_id;
-                    usedOrphans.add(autoSelectedId); 
-                    autoLabel = `<div class="mb-2 text-[10px] text-blue-600 font-bold italic bg-blue-50 p-2 rounded border border-blue-200"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Auto-assigned to existing device at location</div>`;
-                } else if (deployedAtBusiness.length > 0) {
-                    autoLabel = `<div class="mb-2 text-[10px] text-slate-500 font-bold italic bg-slate-50 p-2 rounded border border-slate-200"><i class="fa-solid fa-circle-info mr-1"></i> All local devices paired. Defaulting to Standalone.</div>`;
+                if(!kitMaster) { 
+                    errLabel.innerText = `ERROR: ID ${kitId} not recognized.`; 
+                    errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
                 }
-
-                let opts = `<option value="">-- Select Pairing Option --</option>`;
-                opts += `<option value="STANDALONE" ${autoSelectedId === 'STANDALONE' ? 'selected' : ''}>No Pairing (Deploy as Standalone)</option>`;
-
-                if (deployedAtBusiness.length > 0) {
-                    opts += `<optgroup label="Existing Device at Merchant">`;
-                    deployedAtBusiness.forEach(m => {
-                        const isSelected = autoSelectedId === m.kit_id ? 'selected' : '';
-                        opts += `<option value="${m.kit_id}" ${isSelected}>${m.kit_id} (Currently at ${business})</option>`;
-                    });
-                    opts += `</optgroup>`;
-                }
-
-                if (availablePairs.length > 0) {
-                    opts += `<optgroup label="Available in Warehouse">`;
-                    availablePairs.forEach(m => opts += `<option value="${m.kit_id}">${m.kit_id} (From Warehouse)</option>`);
-                    opts += `</optgroup>`;
+                if(kitMaster.current_status === 'Damaged') { 
+                    errLabel.innerText = `REJECTED: Kit ${kitId} is QUARANTINED.`; 
+                    errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
                 }
                 
-                extraItemsHTML = `
-                    <div class="mt-4 p-4 bg-slate-50 border border-slate-300 rounded-xl shadow-inner">
-                        <label class="block text-[10px] font-black text-slate-700 uppercase mb-2 tracking-widest">
-                            <i class="fa-solid fa-link mr-1"></i> Action: Pair with ${targetType}
-                        </label>
-                        ${autoLabel}
-                        <select id="paired-device-${kitId}" class="w-full p-3 rounded-xl border border-slate-300 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 bg-white" required>
-                            ${opts}
-                        </select>
+                if (!isAdmin) {
+                    if(phase === 'Phase 1' && kitState.status !== 'Available') { 
+                        errLabel.innerText = `REJECTED: ${kitId} is already deployed at ${kitState.location}`; 
+                        errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                    }
+                    if(phase === 'Phase 4') {
+                        if(kitState.status !== 'Deployed') { 
+                            errLabel.innerText = `REJECTED: ${kitId} is already in Warehouse.`; 
+                            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                        }
+                        if(kitState.location !== business) { 
+                            errLabel.innerText = `REJECTED: ${kitId} belongs to ${kitState.location}.`; 
+                            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                        }
+                    }
+                } else {
+                    errLabel.className = "text-[11px] font-bold hidden bg-amber-50 p-3 rounded-xl border border-amber-200 italic text-amber-600";
+                    if(phase === 'Phase 1' && kitState.status !== 'Available') overrideMessages.push(`${kitId} at ${kitState.location}`);
+                    if(phase === 'Phase 4' && kitState.status !== 'Deployed') overrideMessages.push(`${kitId} in Warehouse`);
+                    else if(phase === 'Phase 4' && kitState.location !== business) overrideMessages.push(`${kitId} at ${kitState.location}`);
+                }
+
+                const recipe = masterKitTypes.find(t => t.type_name === kitMaster.kit_type);
+                let itemsHTML = '';
+                if(recipe) {
+                    itemsHTML = recipe.checklist_items.split(',').map(i => {
+                        const cleanItem = i.trim();
+                        return `
+                        <label class="flex items-center space-x-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:bg-blue-50 transition">
+                            <input type="checkbox" name="kit_item_${kitId}" value="${cleanItem}" class="w-5 h-5 text-blue-600 rounded cursor-pointer">
+                            <span class="font-bold text-slate-700 text-sm">${cleanItem}</span>
+                        </label>`;
+                    }).join('');
+                }
+
+                // --- SMART AUTO-MAPPING LOGIC ---
+                let extraItemsHTML = '';
+                
+                if (recipe && recipe.requires_pairing === true && recipe.paired_with_type) {
+                    const targetType = recipe.paired_with_type; 
+                    
+                    if (phase === 'Phase 1') {
+                        // 1. Cari Target Devices yang sedang berada di Merchant ini
+                        const deployedAtBusiness = masterKitsData.filter(k => 
+                            k.kit_type === targetType && 
+                            globalKitMap.has(k.kit_id) && 
+                            globalKitMap.get(k.kit_id).location === business &&
+                            globalKitMap.get(k.kit_id).status === 'Deployed'
+                        );
+
+                        // 2. Cari Target Devices yang masih Available
+                        const availablePairs = masterKitsData.filter(k => 
+                            k.kit_type === targetType && 
+                            k.area_name === document.getElementById('input-area').value && 
+                            (!globalKitMap.has(k.kit_id) || globalKitMap.get(k.kit_id).status === 'Available')
+                        );
+                        
+                        // Cek device Jomblo yang belum dipinang oleh iterasi Mono sebelumnya
+                        const availableOrphans = deployedAtBusiness.filter(k => !usedOrphans.has(k.kit_id));
+                        
+                        let autoSelectedId = "STANDALONE"; 
+                        let autoLabel = "";
+
+                        if (availableOrphans.length > 0) {
+                            autoSelectedId = availableOrphans[0].kit_id;
+                            usedOrphans.add(autoSelectedId); // Tandai sudah dipakai
+                            autoLabel = `<div class="mb-2 text-[10px] text-blue-600 font-bold italic bg-blue-50 p-2 rounded border border-blue-200"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Auto-assigned to existing device at location</div>`;
+                        } else if (deployedAtBusiness.length > 0) {
+                            autoLabel = `<div class="mb-2 text-[10px] text-slate-500 font-bold italic bg-slate-50 p-2 rounded border border-slate-200"><i class="fa-solid fa-circle-info mr-1"></i> All local devices paired. Defaulting to Standalone.</div>`;
+                        }
+
+                        let opts = `<option value="">-- Select Pairing Option --</option>`;
+                        opts += `<option value="STANDALONE" ${autoSelectedId === 'STANDALONE' ? 'selected' : ''}>No Pairing (Deploy as Standalone)</option>`;
+
+                        if (deployedAtBusiness.length > 0) {
+                            opts += `<optgroup label="Existing Device at Merchant">`;
+                            deployedAtBusiness.forEach(m => {
+                                const isSelected = autoSelectedId === m.kit_id ? 'selected' : '';
+                                opts += `<option value="${m.kit_id}" ${isSelected}>${m.kit_id} (Currently at ${business})</option>`;
+                            });
+                            opts += `</optgroup>`;
+                        }
+
+                        if (availablePairs.length > 0) {
+                            opts += `<optgroup label="Available in Warehouse">`;
+                            availablePairs.forEach(m => opts += `<option value="${m.kit_id}">${m.kit_id} (From Warehouse)</option>`);
+                            opts += `</optgroup>`;
+                        }
+                        
+                        extraItemsHTML = `
+                            <div class="mt-4 p-4 bg-slate-50 border border-slate-300 rounded-xl shadow-inner">
+                                <label class="block text-[10px] font-black text-slate-700 uppercase mb-2 tracking-widest">
+                                    <i class="fa-solid fa-link mr-1"></i> Action: Pair with ${targetType}
+                                </label>
+                                ${autoLabel}
+                                <select id="paired-device-${kitId}" class="w-full p-3 rounded-xl border border-slate-300 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 bg-white" required>
+                                    ${opts}
+                                </select>
+                            </div>
+                        `;
+                    } else if (phase === 'Phase 4') {
+                        const deployedPairs = masterKitsData.filter(k => k.kit_type === targetType && globalKitMap.get(k.kit_id)?.location === business);
+                        if (deployedPairs.length > 0) {
+                            const pairedId = deployedPairs[0].kit_id;
+                            extraItemsHTML = `
+                                <div class="mt-4 p-4 bg-slate-50 border border-slate-300 rounded-xl flex items-center justify-between shadow-sm">
+                                    <div>
+                                        <label class="block text-[10px] font-black text-slate-600 uppercase mb-1 tracking-widest">
+                                            <i class="fa-solid fa-link mr-1"></i> Paired ${targetType} (Auto)
+                                        </label>
+                                        <span class="font-black text-base text-slate-800">${pairedId}</span>
+                                    </div>
+                                    <i class="fa-solid fa-circle-check text-green-600 text-xl"></i>
+                                    <input type="hidden" id="paired-device-${kitId}" value="${pairedId}">
+                                </div>
+                            `;
+                        } else {
+                            extraItemsHTML = `<div class="mt-4 p-3 bg-red-50 text-[10px] text-red-600 font-bold italic rounded-xl border border-red-200"><i class="fa-solid fa-triangle-exclamation mr-1"></i> No paired ${targetType} detected here.</div>`;
+                        }
+                    }
+                }
+
+                const badge = getKitBadge(kitMaster.kit_type);
+                const textColor = badge.colorClass.split(' ')[1]; 
+
+                checklistHTML += `
+                    <div class="mb-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
+                        <h4 class="text-[10px] font-black uppercase tracking-widest mb-3 border-b border-slate-100 pb-2 flex items-center ${textColor}">
+                            ${badge.icon} <span class="mr-1">${kitId}</span> 
+                            <span class="opacity-60 font-bold">(${kitMaster.kit_type})</span>
+                        </h4>
+                        <div class="space-y-2">
+                            ${itemsHTML}
+                        </div>
+                        ${extraItemsHTML}
                     </div>
                 `;
-            } else if (phase === 'Phase 4') {
-                const deployedPairs = masterKitsData.filter(k => k.kit_type === targetType && (getKitLocation(k.kit_id).loc || '').toLowerCase() === business.toLowerCase());
-                if (deployedPairs.length > 0) {
-                    const pairedId = deployedPairs[0].kit_id;
-                    extraItemsHTML = `
-                        <div class="mt-4 p-4 bg-slate-50 border border-slate-300 rounded-xl flex items-center justify-between shadow-sm">
-                            <div>
-                                <label class="block text-[10px] font-black text-slate-600 uppercase mb-1 tracking-widest">
-                                    <i class="fa-solid fa-link mr-1"></i> Paired ${targetType} (Auto)
-                                </label>
-                                <span class="font-black text-base text-slate-800">${pairedId}</span>
-                            </div>
-                            <i class="fa-solid fa-circle-check text-green-600 text-xl"></i>
-                            <input type="hidden" id="paired-device-${kitId}" value="${pairedId}">
-                        </div>
-                    `;
-                } else {
-                    extraItemsHTML = `<div class="mt-4 p-3 bg-red-50 text-[10px] text-red-600 font-bold italic rounded-xl border border-red-200"><i class="fa-solid fa-triangle-exclamation mr-1"></i> No paired ${targetType} detected here.</div>`;
-                }
             }
+
+            if(overrideMessages.length > 0) {
+                errLabel.innerText = `OVERRIDE MODE: ` + overrideMessages.join(', ');
+                errLabel.classList.remove('hidden');
+            }
+
+            document.getElementById('kit-type-label').innerText = `${selectedKits.length} Kits Selected`;
+            document.getElementById('checklist-items').innerHTML = checklistHTML;
+            document.getElementById('field-checklist').classList.remove('hidden');
         }
-
-        const badge = getKitBadge(kitMaster.kit_type);
-        const textColor = badge.colorClass.split(' ')[1]; 
-
-        let uploadToggleHTML = '';
-        let perKitConditionHTML = '';
-
-        if (phase === 'Phase 4') {
-            document.getElementById('global-condition-block').classList.add('hidden');
-            
-            perKitConditionHTML = `
-                <div class="mt-4 border-t border-slate-100 pt-4">
-                    <div class="mb-4">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Condition (${kitId}) *</label>
-                        <input type="hidden" id="condition-${kitId}">
-                        <div class="flex gap-2">
-                            <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-slate-300 rounded-xl font-bold text-slate-500 text-xs" onclick="setBtn(this, 'condition-${kitId}', 'Good')">GOOD</button>
-                            <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-slate-300 rounded-xl font-bold text-slate-500 text-xs" onclick="setBtn(this, 'condition-${kitId}', 'Damaged')">DAMAGED</button>
-                        </div>
-                    </div>
-                    <div class="mb-4">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Checklist Match (${kitId})? *</label>
-                        <input type="hidden" id="match-${kitId}">
-                        <div class="flex gap-2">
-                            <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-slate-300 rounded-xl font-bold text-slate-500 text-xs" onclick="setBtn(this, 'match-${kitId}', 'Yes')">YES</button>
-                            <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-slate-300 rounded-xl font-bold text-slate-500 text-xs" onclick="setBtn(this, 'match-${kitId}', 'No')">NO</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            uploadToggleHTML = `
-                <div class="p-4 bg-amber-50 border border-amber-200 rounded-xl mt-2">
-                    <label class="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-2">Upload SD (${kitId})? *</label>
-                    <input type="hidden" id="upload-status-${kitId}">
-                    <div class="flex gap-3">
-                        <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-amber-300 rounded-xl font-bold text-amber-700 text-xs" onclick="setBtn(this, 'upload-status-${kitId}', 'Yes')">YES</button>
-                        <button type="button" class="btn-toggle flex-1 py-3 bg-white border border-amber-300 rounded-xl font-bold text-amber-700 text-xs" onclick="setBtn(this, 'upload-status-${kitId}', 'No')">NO</button>
-                    </div>
-                </div>
-            `;
-        } else {
-            let gb = document.getElementById('global-condition-block');
-            if(gb) gb.classList.remove('hidden');
-        }
-
-        checklistHTML += `
-            <div class="mb-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
-                <h4 class="text-[10px] font-black uppercase tracking-widest mb-3 border-b border-slate-100 pb-2 flex items-center ${textColor}">
-                    ${badge.icon} <span class="mr-1">${kitId}</span> 
-                    <span class="opacity-60 font-bold">(${kitMaster.kit_type})</span>
-                </h4>
-                <div class="space-y-2">
-                    ${itemsHTML}
-                </div>
-                ${extraItemsHTML}
-                ${perKitConditionHTML}
-                ${uploadToggleHTML} 
-            </div>
-        `;
-    }
-
-    document.getElementById('kit-type-label').innerText = `${selectedKits.length} Kits Selected`;
-    document.getElementById('checklist-items').innerHTML = checklistHTML;
-    document.getElementById('field-checklist').classList.remove('hidden');
-}
-
-function getGPS() {
+           
+        function getGPS() {
             const gpsLabel = document.getElementById('gps-status'); const gpsInput = document.getElementById('input-gps');
-            gpsLabel.innerHTML = `<span class="text-blue-500 italic"><i class="spinner mr-1" style="border-top-color: #3b82f6;"></i>Locating...</span>`;
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     (p) => { gpsInput.value = `${p.coords.latitude}, ${p.coords.longitude}`; gpsLabel.innerHTML = `<span class="text-green-600">Location Locked</span>`; },
-                    (e) => { gpsLabel.innerHTML = `<span class="text-red-500 font-bold italic">GPS Failed/Denied!</span>`; }, 
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } // <-- BUG 4 FIXED: Timeout 10 detik
+                    (e) => { gpsLabel.innerHTML = `<span class="text-red-500 font-bold italic">GPS Denied!</span>`; }, { enableHighAccuracy: true }
                 );
             }
         }
-async function compressImageToBase64(file) {
+
+        async function compressImageToBase64(file) {
             return new Promise((res) => {
                 const reader = new FileReader(); reader.readAsDataURL(file);
                 reader.onload = e => {
                     const img = new Image(); img.src = e.target.result;
                     img.onload = () => {
-                        const canvas = document.createElement('canvas'); let w = img.width, h = img.height; 
-                        const max = 800; // <-- BUG 2 FIXED: Diturunkan dari 1024 ke 800 agar aman di LocalStorage
+                        const canvas = document.createElement('canvas'); let w = img.width, h = img.height; const max = 1024;
                         if(w>h && w>max){h*=max/w; w=max;} else if(h>max){w*=max/h; h=max;}
                         canvas.width = w; canvas.height = h; canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                        res(canvas.toDataURL('image/jpeg', 0.5)); // <-- Diturunkan quality-nya dari 0.6 ke 0.5
+                        res(canvas.toDataURL('image/jpeg', 0.6));
                     };
                 };
             });
@@ -814,89 +838,115 @@ async function compressImageToBase64(file) {
         }
 
 async function processSinglePayload(p) {
-            // Peta dinamis dari local sd_qty ke kolom spesifik Supabase
-            const qtyDrop = p.phase === 'Phase 2' ? (p.sd_qty || 0) : 0;
-            const qtyPickup = p.phase === 'Phase 3' ? (p.sd_qty || 0) : 0;
 
-            // 1. HANYA FOKUS MENYIMPAN KE LOG TRANSACTIONS
-            const { error: dbErr } = await db.from('transactions').insert([{
-                sdr_name: p.sdr_name, area: p.area, phase: p.phase, runner_name: p.runner_name, business_name: p.business_name, 
-                kit_id: p.kit_id, kit_type: p.kit_type, 
-                sd_drop_qty: qtyDrop, 
-                sd_pickup_qty: qtyPickup, 
-                sd_uploaded: p.sd_uploaded,
-                gps_location: p.gps_location, device_condition: p.device_condition, missing_or_issue: p.missing_or_issue, 
-                proof_photo: p.proof_photo,
+    let photoUrl = null;
 
-client_tx_id: p.client_tx_id,
+    if (p.photo_b64) {
+        const res = await fetch(p.photo_b64);
+        const blob = await res.blob();
 
-                event_time: p.event_time,
+        const fName = `${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
 
-operational_date:
-    p.operational_date,
+        const { error: upErr } = await db.storage
+            .from('proofs')
+            .upload(fName, blob);
 
-created_at:
-    p.created_at, other_item: p.other_item, pickup_time: p.pickup_time, drop_off_time: p.drop_off_time
-            }]);
-            
-            if (dbErr) throw dbErr;
+        if (upErr) throw upErr;
+        console.log("PHOTO OK");
 
-            // BLOK KODE "UPDATE OTOMATIS TABEL MASTER KITS" TELAH DIHAPUS DARI SINI
-            // Pembaruan status kit sekarang akan diserahkan sepenuhnya ke Supabase (Database Trigger).
+        photoUrl = db.storage
+            .from('proofs')
+            .getPublicUrl(fName)
+            .data.publicUrl;
+    }
+
+    const { error: dbErr } = await db
+        .from('transactions')
+        .insert([{
+            sdr_name: p.sdr_name,
+            area: p.area,
+            phase: p.phase,
+            runner_name: p.runner_name,
+            business_name: p.business_name,
+            kit_id: p.kit_id,
+            kit_type: p.kit_type,
+            sd_qty: p.sd_qty,
+            sd_uploaded: p.sd_uploaded,
+            gps_location: p.gps_location,
+            device_condition: p.device_condition,
+            missing_or_issue: p.missing_or_issue,
+            proof_photo: photoUrl,
+            created_at: p.created_at,
+            other_item: p.other_item,
+            pickup_time: p.pickup_time,
+            drop_off_time: p.drop_off_time
+        }]);
+
+    if (dbErr) {
+    console.log(dbErr);
+    alert(dbErr.message);
+    throw dbErr;
+}
+    console.log("TRANSACTION OK");
+
+
+    // ===========================
+    // UPDATE MASTER KIT
+    // ===========================
+    if (p.kit_id) {
+
+        const targetLocation =
+            p.phase === "Phase 4"
+                ? "Warehouse"
+                : p.business_name;
+
+        const deployment =
+            p.phase === "Phase 4"
+                ? "Available"
+                : "Deployed";
+
+        const updateData = {
+            last_location: targetLocation,
+            status_deployment: deployment
+        };
+
+        if (p.device_condition === "Damaged") {
+            updateData.current_status = "Damaged";
         }
-        
+
+const { error: kitErr } = await db
+    .from("master_kits")
+    .update(updateData)
+    .eq("kit_id", p.kit_id);
+
+if (kitErr) throw kitErr;
+console.log("MASTER KIT OK");
+}
+}
 
 async function syncOfflineQueue() {
             if (!navigator.onLine) { alert("You are still offline. Please find a better signal."); return; }
             let queue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
             if (queue.length === 0) return;
 
+            // --- FILTER SANITASI CACHE ---
+            // Bersihkan data sampah dari cache lama HP sebelum dikirim ke database
             queue = queue.map(q => {
-                if (q.phase === 'Phase 2' || q.phase === 'Phase 3') { q.kit_id = null; q.kit_type = null; q.device_condition = null; }
+                if (q.phase === 'Phase 2' || q.phase === 'Phase 3') {
+                    q.kit_id = null;
+                    q.kit_type = null;
+                    q.device_condition = null; // Phase 2 & 3 tidak butuh kondisi device
+                }
                 return q;
             });
+            // -----------------------------
 
             const btn = document.getElementById('btn-sync-now');
             btn.innerHTML = `<div class="spinner mr-1"></div> Syncing...`; btn.disabled = true;
 
             let remainingQueue = [];
             for (let i = 0; i < queue.length; i++) {
-                try { 
-                    // Jika data tersimpan dengan base64, upload dulu!
-                    if (queue[i].photo_b64 && !queue[i].proof_photo) {
-                        const res = await fetch(queue[i].photo_b64); const blob = await res.blob();
-                        const fName = `offline_${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
-                        const { error: upErr } = await db.storage.from('proofs').upload(fName, blob);
-                        if (upErr) throw upErr;
-                        queue[i].proof_photo = db.storage.from('proofs').getPublicUrl(fName).data.publicUrl;
-                        queue[i].photo_b64 = null; // Kosongkan base64 agar ringan
-                    }
-                    await processSinglePayload(queue[i]); 
-                } catch (e) {
-
-if (
-
-    e.code === '23505'
-
-    ||
-
-    (
-        e.message &&
-        (
-            e.message.toLowerCase().includes('duplicate')
-            ||
-            e.message.toLowerCase().includes('unique')
-        )
-    )
-
-)
-
-{
-        continue;
-    }
-
-    remainingQueue.push(queue[i]);
-}
+                try { await processSinglePayload(queue[i]); } catch (e) { remainingQueue.push(queue[i]); }
             }
 
             localStorage.setItem('runner_sync_queue', JSON.stringify(remainingQueue));
@@ -907,10 +957,9 @@ if (
             else showToast(`${remainingQueue.length} items failed to sync. Try again later.`, true);
         }
 
-
         window.addEventListener('online', syncOfflineQueue);
 
-document.getElementById('runnerForm').addEventListener('submit', async function(e) {
+        document.getElementById('runnerForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
             if(!document.getElementById('input-gps').value) { alert("GPS Required! Please click Refresh GPS."); return; }
@@ -923,350 +972,221 @@ document.getElementById('runnerForm').addEventListener('submit', async function(
             let condition = document.getElementById('input-condition').value || null;
             let match = document.getElementById('input-match').value || null;
             let sdQtyRaw = document.getElementById('input-sd').value;
-            let uploadedQtyRaw = document.getElementById('input-sd-uploaded-qty') ? document.getElementById('input-sd-uploaded-qty').value : "";
-            let photoCount = document.getElementById('input-photo').files.length;
+            
+            let photoCount = 1;
             let sdrNameVal = document.getElementById('input-sdr-name').value || null;
 
-            if (photoCount === 0) { alert("Visual Proof (Photo) is required!"); return; }
 
-            // VALIDASI
             if (phase === 'Phase 1') {
                 if (!sdrNameVal) { alert("SDR Name is required for Phase 1!"); return; } 
                 if (!hasKits) { alert("At least one Kit ID is required!"); return; }
                 if (!condition) { alert("Physical Integrity (Good/Damaged) is required!"); return; }
                 if (!match) { alert("Audit Checklist Match (Yes/No) is required!"); return; }
             } else if (phase === 'Phase 2') {
-                if (sdQtyRaw === "") { alert("SD Count quantity is required!"); return; }
+                if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
             } else if (phase === 'Phase 3') {
-                if (sdQtyRaw === "") { alert("SD Count quantity is required!"); return; }
-                if (uploadedQtyRaw === "") { alert("Uploaded SD quantity is required! (Isi 0 jika tidak ada yang di-upload)"); return; }
-                if (parseInt(uploadedQtyRaw) > parseInt(sdQtyRaw)) { alert("Jumlah Upload tidak boleh lebih besar dari Total SD!"); return; }
+                if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
             } else if (phase === 'Phase 4') {
                 if (!hasKits) { alert("At least one Kit ID is required!"); return; }
-                // Validasi per-kit untuk Phase 4
-                for(let kitId of selectedKits) {
-                    let kCond = document.getElementById('condition-' + kitId);
-                    let kMatch = document.getElementById('match-' + kitId);
-                    let kUp = document.getElementById('upload-status-' + kitId);
-                    
-                    if (!kCond || !kCond.value) { alert("Pilih Condition (Good/Damaged) untuk Kit " + kitId + "!"); return; }
-                    if (!kMatch || !kMatch.value) { alert("Pilih Checklist Match (Yes/No) untuk Kit " + kitId + "!"); return; }
-                    if (!kUp || !kUp.value) { alert("Pilih status Upload SD untuk Kit " + kitId + " (YES/NO)!"); return; }
-                }
+                if (!condition) { alert("Physical Integrity (Good/Damaged) is required!"); return; }
+                if (!match) { alert("Audit Checklist Match (Yes/No) is required!"); return; }
             }
 
             const btnLoad = document.getElementById('btn-loading'); 
             btnLoad.classList.remove('hidden'); document.getElementById('btn-submit').disabled = true;
 
+            
+
+            let sdQtyParsed = sdQtyRaw ? parseInt(sdQtyRaw) : null;
+
             try {
-                let finalPhotoUrl = null; 
-                let photoBase64ForOffline = null;
-                const fileInput = document.getElementById('input-photo');
-                
-                // Process Image with Timestamp Watermark
-                if (fileInput.files.length > 0) {
-                    photoBase64ForOffline = await processPhotoWithTimestamp(fileInput.files[0]);
-                    
-                    if (navigator.onLine) {
-                        // Tembak upload ke Supabase SEBELUM dibagi-bagi ke Payload
-                        const res = await fetch(photoBase64ForOffline); const blob = await res.blob();
-                        const fName = `${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
-                        const { error: upErr } = await db.storage.from('proofs').upload(fName, blob);
-                        if (upErr) throw upErr;
-                        finalPhotoUrl = db.storage.from('proofs').getPublicUrl(fName).data.publicUrl;
-                    }
-                }
 
                 const basePayload = {
-                    sdr_name: phase === 'Phase 1' ? sdrNameVal : null,
-                    area: document.getElementById('input-area').value, phase: phase, runner_name: document.getElementById('input-runner').value,
-                    business_name: business, gps_location: document.getElementById('input-gps').value, 
-                    device_condition: phase === 'Phase 4' ? null : condition, // Null-kan sementara untuk Phase 4
-                    missing_or_issue: document.getElementById('input-issue').value, 
-                    proof_photo: finalPhotoUrl,
-                    photo_b64: photoBase64ForOffline,
-                    
-                    created_at: new Date().toISOString(),
 
-event_time: (() => {
+    sdr_name: phase === 'Phase 1' ? sdrNameVal : null,
 
-    const pickup =
-        document.getElementById('input-pickup-time').value;
+    area: document.getElementById('input-area').value,
 
-    const dropoff =
-        document.getElementById('input-dropoff-time').value;
+    phase: phase,
 
-    const chosenTime =
-        dropoff || pickup;
+    runner_name: document.getElementById('input-runner').value,
 
-    const now = new Date();
+    business_name: business,
 
-    if (!chosenTime) {
-        return now.toISOString();
-    }
+    sd_qty: sdQtyParsed,
 
-    const [hh, mm] =
-        chosenTime.split(':');
+    sd_uploaded:
 
-    const localDate = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        parseInt(hh),
-        parseInt(mm),
-        0,
-        0
-    );
+phase==="Phase 3"
 
-    return localDate.toISOString();
+?sdQtyParsed
 
-})(),
+:0,
 
-operational_date: (() => {
+    gps_location: document.getElementById('input-gps').value,
 
-    const pickup =
-        document.getElementById('input-pickup-time').value;
+    device_condition: condition,
 
-    const dropoff =
-        document.getElementById('input-dropoff-time').value;
+    missing_or_issue: document.getElementById('input-issue').value,
 
-    const chosenTime =
-        dropoff || pickup;
+    created_at: new Date().toISOString(),
 
-    const now = new Date();
+    other_item: document.getElementById('input-other-item').value,
 
-    if (!chosenTime) {
-        return now.toLocaleDateString('en-CA');
-    }
+    pickup_time: document.getElementById('input-pickup-time').value,
 
-    const [hh, mm] =
-        chosenTime.split(':');
+    drop_off_time: document.getElementById('input-dropoff-time').value
 
-    const localDate = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        parseInt(hh),
-        parseInt(mm),
-        0,
-        0
-    );
-
-    return localDate.toLocaleDateString('en-CA');
-
-})(),
-    
-    
-    other_item: document.getElementById('input-other-item').value, 
-                    pickup_time: document.getElementById('input-pickup-time').value || null,
-                    drop_off_time: document.getElementById('input-dropoff-time').value || null
-                };
+};
 
                 let payloadsToProcess = [];
 
-                // --- LOGIC PEMISAHAN LOG PHASE 3 ---
-if (phase === 'Phase 3') {
-
-    let totalSd =
-        parseInt(sdQtyRaw) || 0;
-
-    let upSd =
-        parseInt(uploadedQtyRaw) || 0;
-
-    payloadsToProcess.push({
-
-        ...basePayload,
-
-        client_tx_id:
-            crypto.randomUUID(),
-
-        sd_qty:
-            totalSd,
-
-        sd_uploaded:
-            upSd,
-
-        kit_id:
-            null,
-
-        kit_type:
-            null
-    });
-}
-                // --- LOGIC PHASE 1 & PHASE 4 (PER KIT) ---
-                else if (selectedKits.length > 0 && (phase === 'Phase 1' || phase === 'Phase 4')) {
+                if (selectedKits.length > 0 && (phase === 'Phase 1' || phase === 'Phase 4')) {
                     for (let i = 0; i < selectedKits.length; i++) {
                         const kId = selectedKits[i];
                         const kMaster = masterKitsData.find(k => k.kit_id === kId);
                         
+                        // Menangkap Info Pairing untuk dimasukkan ke Log UI nanti via kolom 'other_item'
                         let pairStatusText = "";
                         const pairedEl = document.getElementById(`paired-device-${kId}`);
                         if (pairedEl) {
-                            if (pairedEl.value === 'STANDALONE' || !pairedEl.value) pairStatusText = "STANDALONE";
-                            else pairStatusText = `Paired with ${pairedEl.value}`;
-                        }
-
-                        let kitUploadedCount = 0;
-                        let kitCondition = null;
-                        if (phase === 'Phase 4') {
-                            let isUp = document.getElementById('upload-status-' + kId).value;
-                            kitUploadedCount = (isUp === 'Yes') ? 1 : 0;
-                            kitCondition = document.getElementById('condition-' + kId).value; // Ambil nilai per-kit
-                        }
-
-                        if (phase === 'Phase 1') {
-                            let actualStatus = kMaster ? (kMaster.status_deployment || 'Available') : 'Available';
-                            let actualLocation = kMaster ? (kMaster.last_location || 'Warehouse') : 'Warehouse';
-
-                            if (actualStatus !== 'Available' && actualLocation !== business && actualLocation !== 'Warehouse') {
-payloadsToProcess.push({
-
-    ...basePayload,
-
-    client_tx_id:
-        crypto.randomUUID(),
-
-    proof_photo:
-        null,
-
-    photo_b64:
-        null,
-
-    phase:
-        'Phase 4',
-        
-        
-    business_name: actualLocation, sdr_name: null, kit_id: kId,
-                                    kit_type: kMaster ? kMaster.kit_type : null, sd_qty: null, sd_uploaded: 0,
-                                    missing_or_issue: '[SYSTEM AUTO-RETURN] Ditarik paksa via Admin ke ' + business, other_item: ''
-                                });
+                            if (pairedEl.value === 'STANDALONE' || !pairedEl.value) {
+                                pairStatusText = "STANDALONE";
+                            } else {
+                                pairStatusText = `Paired with ${pairedEl.value}`;
                             }
                         }
 
-                        let mainPayload = { 
+                        const file =
+document.getElementById(`photo-${kId}`).files[0];
+
+if(!file){
+
+    alert(`Foto ${kId} belum diambil.`);
+    btnLoad.classList.add('hidden');
+    document.getElementById('btn-submit').disabled=false;
+    return;
+
+}
+
+const photoBase64 =
+await compressImageToBase64(file);
+
+let uploadChoice =
+document.getElementById(`upload-${kId}`).value;
+
+if(!uploadChoice){
+
+    alert(`Pilih Upload SD ${kId}`);
+
+    btnLoad.classList.add('hidden');
+
+    document.getElementById('btn-submit').disabled=false;
+
+    return;
+
+}
+
+let sdUploaded =
+uploadChoice==="Yes"
+?1
+:0;
+                        // Payload Utama (Misal: Mono)
+let mainPayload = {
 
     ...basePayload,
 
-    client_tx_id:
-        crypto.randomUUID(),
+    photo_b64: photoBase64,
 
-    kit_id:
-        kId,
+    sd_uploaded: sdUploaded,
 
-    kit_type:
-        kMaster ? kMaster.kit_type : null,
+    id:'local_'+Date.now()+'_'+i,
 
-    sd_qty:
-        null,
+    kit_id:kId,
 
-    sd_uploaded:
-        kitUploadedCount
+    kit_type:kMaster ? kMaster.kit_type : null
+
 };
-                        if (phase === 'Phase 4') mainPayload.device_condition = kitCondition; // Masukkan nilai individualnya
-                        if (pairStatusText) mainPayload.other_item = basePayload.other_item ? `${basePayload.other_item} | [${pairStatusText}]` : `[${pairStatusText}]`;
+                        // Inject informasi pairing ke dalam other_item agar bisa dipanggil saat render UI Activity Log
+                        if (pairStatusText) {
+                            mainPayload.other_item = basePayload.other_item ? `${basePayload.other_item} | [${pairStatusText}]` : `[${pairStatusText}]`;
+                        }
+
                         payloadsToProcess.push(mainPayload);
 
+                        // Payload Kedua (Misal: Wristcam yang dipasangkan otomatis)
                         if (pairedEl && pairedEl.value && pairedEl.value !== 'STANDALONE') {
                             const pairedId = pairedEl.value;
                             const pairedMaster = masterKitsData.find(k => k.kit_id === pairedId);
                             
-                            if (phase === 'Phase 1') {
-                                let pActualStatus = pairedMaster ? (pairedMaster.status_deployment || 'Available') : 'Available';
-                                let pActualLoc = pairedMaster ? (pairedMaster.last_location || 'Warehouse') : 'Warehouse';
-                                if (pActualStatus !== 'Available' && pActualLoc !== business && pActualLoc !== 'Warehouse') {
 payloadsToProcess.push({
 
     ...basePayload,
 
-    client_tx_id:
-        crypto.randomUUID(),
+    photo_b64: photoBase64,
 
-    proof_photo:
-        null,
+    sd_uploaded: sdUploaded,
 
-    photo_b64:
-        null,
-
-    phase:
-        'Phase 4',
-        
-        business_name: pActualLoc, sdr_name: null, kit_id: pairedId,
-                                        kit_type: pairedMaster ? pairedMaster.kit_type : null, sd_qty: null, sd_uploaded: 0,
-                                        missing_or_issue: '[SYSTEM AUTO-RETURN] Paired Device ditarik paksa via Admin', other_item: ''
-                                    });
-                                }
-                            }
-
-                            let pairPayload = {
-
-    ...basePayload,
-
-    client_tx_id:
-        crypto.randomUUID(),
-
-    kit_id:
-        pairedId,
-
-    kit_type:
-        pairedMaster ? pairedMaster.kit_type : 'Paired Device',
-
-    sd_qty:
-        null,
-
-    sd_uploaded:
-        kitUploadedCount,
-
-    missing_or_issue:
-        (basePayload.missing_or_issue
-            ? basePayload.missing_or_issue + " | "
-            : "") + `[Auto-Paired with ${kId}]`
-};
-                            if (phase === 'Phase 4') pairPayload.device_condition = kitCondition; // Pasangkan nilainya ke alat yg pair juga
-                            payloadsToProcess.push(pairPayload);
+    id:'local_pair_' + Date.now() + '_' + i,
+                                kit_type: pairedMaster ? pairedMaster.kit_type : 'Paired Device',
+                                missing_or_issue: (basePayload.missing_or_issue ? basePayload.missing_or_issue + " | " : "") + `[Auto-Paired with ${kId}]`
+                            });
                         }
                     }
-                } 
-                // --- LOGIC PHASE 2 ---
-                else {
-                    let phase2SdQty = phase === 'Phase 2' ? parseInt(sdQtyRaw) : null;
-                    payloadsToProcess.push({
+} else {
+
+const file =
+document.getElementById("general-photo").files[0];
+
+if(!file){
+
+    alert("Foto wajib diambil.");
+
+    btnLoad.classList.add('hidden');
+
+    document.getElementById('btn-submit').disabled=false;
+
+    return;
+
+}
+
+const photoBase64 =
+await compressImageToBase64(file);
+payloadsToProcess.push({
 
     ...basePayload,
 
-    client_tx_id:
-        crypto.randomUUID(),
+    photo_b64: photoBase64,
 
-    kit_id:
-        null,
+    id: 'local_' + Date.now(),
 
-    kit_type:
-        null,
+    kit_id: null,
 
-    sd_qty:
-        phase2SdQty,
+    kit_type: null
 
-    sd_uploaded:
-        0
 });
                 }
 
-                // EKSEKUSI PENYIMPANAN
                 for (const payload of payloadsToProcess) {
                     if (navigator.onLine) {
-                        try { 
-                            // BUG 1 FIXED: Karena jika online photoUrl sudah matang, fungsi di bawah hanya menembak teks ke DB
-                            await processSinglePayload(payload); 
-                        } catch (uploadError) { saveToOfflineQueue(payload); }
+try {
+    await processSinglePayload(payload);
+}
+catch (err) {
+
+    console.error(err);
+
+    saveToOfflineQueue(payload);
+
+}
                     } else saveToOfflineQueue(payload);
                 }
                 
                 showToast(navigator.onLine ? "Data Transmitted Successfully!" : "Saved Offline. Will sync automatically.", !navigator.onLine);
 
-                // RESET FORM
                 this.reset(); 
                 document.getElementById('input-sdr-name').value = ""; document.getElementById('input-condition').value = "";
-                document.getElementById('input-match').value = ""; 
-                if(document.getElementById('input-sd-uploaded-qty')) document.getElementById('input-sd-uploaded-qty').value = "";
+                document.getElementById('input-match').value = ""; document.getElementById('input-sdupload').value = "";
                 document.getElementById('checklist-items').innerHTML = ""; document.getElementById('input-business').value = ""; 
                 document.getElementById('label-business').innerText = "Select Location..."; document.getElementById('label-business').classList.add('text-slate-400');
                 document.getElementById('input-gps').value = ""; document.getElementById('gps-status').innerHTML = `<span class="font-bold text-red-600 italic uppercase">GPS Required</span>`;
@@ -1277,68 +1197,31 @@ payloadsToProcess.push({
             } catch (e) { alert("Application Error: " + e.message); } 
             finally { btnLoad.classList.add('hidden'); document.getElementById('btn-submit').disabled = false; }
         });
-        
-        async function fetchDynamicKits() {
-    const phase = document.getElementById('input-phase').value;
-    const business = document.getElementById('input-business').value;
-    const area = document.getElementById('input-area').value;
 
-    // Jika bukan Phase 1 atau Phase 4, bersihkan memori
-    if (phase !== 'Phase 1' && phase !== 'Phase 4') {
-        masterKitsData = []; 
-        renderKitList(); 
-        return; 
-    }
-
-    try {
-        if (phase === 'Phase 1') {
-            // 1. Tarik HANYA Kit di Warehouse (Termasuk yang field last_location-nya kosong/null)
-            const { data: whKits } = await db.from('master_kits')
-                .select('*')
-                .eq('area_name', area)
-                .or('last_location.eq.Warehouse,last_location.eq.warehouse,last_location.is.null');
-                
-            // 2. Tarik Kit di Merchant (HANYA untuk mengecek kebutuhan Auto-Pairing)
-            let bizKits = [];
-            if (business) {
-                const res = await db.from('master_kits').select('*').eq('last_location', business);
-                bizKits = res.data || [];
-            }
-            
-            masterKitsData = [...(whKits || []), ...bizKits];
-            
-        } else if (phase === 'Phase 4') {
-            // HANYA tarik Kit yang saat ini terdata berada di Merchant tersebut
-            if (business) {
-                const { data: p4Kits } = await db.from('master_kits')
-                    .select('*')
-                    .eq('last_location', business);
-                masterKitsData = p4Kits || [];
-            } else {
-                masterKitsData = [];
-            }
-        }
-    } catch (e) {
-        console.error("Gagal menarik data kit dinamis dari Supabase:", e);
-    }
-    
-    renderKitList(); // Segarkan tampilan List Kit di layar HP
-}
-
-        
-async function fetchData() {
+        async function fetchData() {
             try {
-
-                // 1. Ambil data log untuk ditampilkan di UI (limit 50)
-                let query = db.from('transactions').select('*').order('created_at', { ascending: false }).limit(50); 
+                let query = db.from('transactions').select('*').order('created_at', { ascending: false }).limit(200); 
                 if(currentUser.role === 'Staff') query = query.eq('runner_name', currentUser.runner_name);
                 globalTransactions = (await query).data || [];
                 
+                // Membaca status langsung dari master_kits agar sinkron dengan Admin
+                const { data: kitStatusData } = await db.from('master_kits').select('kit_id, last_location, status_deployment');
+                globalKitMap.clear();
+                if (kitStatusData) {
+                    kitStatusData.forEach(k => {
+                        globalKitMap.set(k.kit_id, { 
+                            location: k.last_location || 'Warehouse', 
+                            status: k.status_deployment || 'Available' 
+                        });
+                    });
+                }
+
                 let offlineQueue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
                 let offlineTrx = offlineQueue.map(q => ({...q, is_offline: true}));
-                let combinedDisplay = [...offlineTrx, ...globalTransactions]; 
+                let combinedDisplay = [...offlineTrx, ...globalTransactions].slice(0, 50); 
 
                 document.getElementById('activity-list').innerHTML = combinedDisplay.map(trx => {
+                    // --- ACTIVITY LOG UI ENHANCEMENT (ACTION PLAN) ---
                     let pairingBadgeHTML = "";
                     if (trx.phase === 'Phase 1' && trx.other_item) {
                         if (trx.other_item.includes("Paired with")) {
@@ -1353,9 +1236,7 @@ async function fetchData() {
                     <li class="p-6 flex justify-between items-center hover:bg-slate-50 ${trx.is_offline ? 'bg-amber-50/50' : ''}">
                         <div class="space-y-1">
                             <p class="font-black text-slate-800 text-base">${trx.business_name} ${trx.is_offline ? '<span class="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded ml-2 shadow-sm uppercase tracking-widest"><i class="fa-solid fa-clock mr-1"></i>Pending</span>' : ''}</p>
-                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-tighter">
-                                ${trx.runner_name} &bull; ${trx.kit_id || (trx.phase === 'Phase 2' ? (trx.sd_drop_qty || trx.sd_qty || 0) : (trx.sd_pickup_qty || trx.sd_qty || 0)) + ' SD'}
-                            </p>
+                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-tighter">${trx.runner_name} &bull; ${trx.kit_id || trx.sd_qty+' SD'}</p>
                             ${pairingBadgeHTML}
                         </div>
                         <span class="text-[10px] font-black bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 uppercase tracking-widest">${trx.phase}</span>
@@ -1363,92 +1244,6 @@ async function fetchData() {
                 }).join('');
                 
             } catch (e) { console.error("Offline: Using cache data.", e); }
-        }
-
-function getKitLocation(kitId) {
-    const masterInfo = masterKitsData.find(k => k.kit_id === kitId);
-    
-    if (masterInfo && masterInfo.last_location) {
-        return { 
-            loc: masterInfo.last_location, 
-            isOffice: masterInfo.last_location.toLowerCase() === 'warehouse' 
-        };
-    }
-    
-    return { loc: 'Warehouse', isOffice: true };
-}
-
-/** WATERMARK & TIMESTAMP PROCESSOR **/
-        function processPhotoWithTimestamp(fileUpload) {
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    const img = new Image();
-                    img.onload = function() {
-                        const canvas = document.createElement('canvas');
-                        const ctx = canvas.getContext('2d');
-                        
-                        let w = img.width;
-                        let h = img.height;
-                        const max = 1200; // Optimal resolution for readability and size
-
-                        // Resize logic
-                        if(w > h && w > max) { h *= max / w; w = max; } 
-                        else if(h > max) { w *= max / h; h = max; }
-
-                        canvas.width = w;
-                        canvas.height = h;
-                        
-                        // Draw original photo
-                        ctx.drawImage(img, 0, 0, w, h);
-                        
-                        // Font Configuration
-                        const fontSize = Math.floor(h * 0.04); // 4% of image height
-                        ctx.font = `bold ${fontSize}px Arial`;
-                        ctx.fillStyle = '#ffde00'; // High contrast yellow
-                        ctx.strokeStyle = '#000000'; // Black outline
-                        ctx.lineWidth = Math.floor(fontSize / 10);
-                        ctx.textBaseline = 'bottom';
-                        
-                        // Current Time (Auto Detect Device Timezone)
-                        const now = new Date();
-                        
-                        // 1. Get the local time string
-                        const baseTimeStr = now.toLocaleDateString('en-US', {
-                            day: '2-digit', month: 'short', year: 'numeric',
-                            hour: '2-digit', minute: '2-digit', second: '2-digit',
-                            hour12: true
-                        });
-
-                        // 2. Calculate dynamic timezone offset (e.g., +7 or +8)
-                        const offsetHours = -now.getTimezoneOffset() / 60;
-                        const tzString = `GMT${offsetHours >= 0 ? '+' : ''}${offsetHours}`;
-
-                        // 3. Combine them
-                        const timeStr = `${baseTimeStr} (${tzString})`;
-                        
-                        // Position calculation (Bottom Right corner)
-                        const padding = 20;
-                        const textWidth = ctx.measureText(timeStr).width;
-                        const startX = w - textWidth - padding;
-                        const startY = h - padding;
-
-                        // Semi-transparent black background for text readability
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-                        ctx.fillRect(startX - 10, startY - fontSize - 10, textWidth + 20, fontSize + 20);
-                        
-                        // Draw text
-                        ctx.strokeText(timeStr, startX, startY);
-                        ctx.fillStyle = '#ffde00';
-                        ctx.fillText(timeStr, startX, startY);
-                        
-                        // Return as Base64 (60% quality)
-                        resolve(canvas.toDataURL('image/jpeg', 0.6));
-                    };
-                    img.src = event.target.result;
-                };
-                reader.readAsDataURL(fileUpload);
-            });
         }
 
         window.onload = initApp;
