@@ -482,15 +482,6 @@ accept="image/*"
 capture="environment"
 class="w-full p-3 border rounded-xl mb-3">
 
-<select
-id="upload-${id}"
-class="w-full p-3 border rounded-xl">
-
-<option value="">Upload SD?</option>
-<option value="Yes">Yes</option>
-<option value="No">No</option>
-
-</select>
 
 </div>
 `;
@@ -603,10 +594,14 @@ if(phase === 'Phase 2'){
                 if(phase === 'Phase 3') { document.getElementById('field-sd').classList.remove('hidden'); document.getElementById('label-sd').innerText = "SD Collected Quantity *";
                     document.getElementById('general-photo-container').classList.remove('hidden');
                  }
-                if(phase === 'Phase 4') { document.getElementById('field-kit').classList.remove('hidden'); }
-                
-                document.getElementById('field-sdupload').classList.remove('hidden'); document.getElementById('field-commons').classList.remove('hidden');
-                pickUpInput.value = ""; dropOffInput.value = currentTime; 
+if(phase === 'Phase 4') {
+
+    document.getElementById('field-kit').classList.remove('hidden');
+    document.getElementById('field-sdupload').classList.remove('hidden');
+
+}
+
+document.getElementById('field-commons').classList.remove('hidden');                pickUpInput.value = ""; dropOffInput.value = currentTime; 
             }
             resetKit();
         }
@@ -986,11 +981,30 @@ async function syncOfflineQueue() {
                 if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
             } else if (phase === 'Phase 3') {
                 if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
-            } else if (phase === 'Phase 4') {
-                if (!hasKits) { alert("At least one Kit ID is required!"); return; }
-                if (!condition) { alert("Physical Integrity (Good/Damaged) is required!"); return; }
-                if (!match) { alert("Audit Checklist Match (Yes/No) is required!"); return; }
-            }
+            } else 
+            if (phase === 'Phase 4') {
+
+    if (!hasKits) {
+        alert("At least one Kit ID is required!");
+        return;
+    }
+
+    if (!condition) {
+        alert("Physical Integrity (Good/Damaged) is required!");
+        return;
+    }
+
+    if (!match) {
+        alert("Audit Checklist Match (Yes/No) is required!");
+        return;
+    }
+
+    if (!document.getElementById("input-sdupload").value) {
+        alert("Apakah SD akan diupload? (Yes / No)");
+        return;
+    }
+
+}
 
             const btnLoad = document.getElementById('btn-loading'); 
             btnLoad.classList.remove('hidden'); document.getElementById('btn-submit').disabled = true;
@@ -1072,25 +1086,26 @@ if(!file){
 const photoBase64 =
 await compressImageToBase64(file);
 
-let uploadChoice =
-document.getElementById(`upload-${kId}`).value;
+let sdUploaded = 0;
 
-if(!uploadChoice){
+if (phase === "Phase 4") {
 
-    alert(`Pilih Upload SD ${kId}`);
+    const uploadChoice =
+        document.getElementById("input-sdupload").value;
 
-    btnLoad.classList.add('hidden');
+    if (!uploadChoice) {
 
-    document.getElementById('btn-submit').disabled=false;
+        alert("Apakah SD akan diupload?");
 
-    return;
+        btnLoad.classList.add("hidden");
+        document.getElementById("btn-submit").disabled = false;
+        return;
+
+    }
+
+    sdUploaded = uploadChoice === "Yes" ? 1 : 0;
 
 }
-
-let sdUploaded =
-uploadChoice==="Yes"
-?1
-:0;
                         // Payload Utama (Misal: Mono)
 let mainPayload = {
 
