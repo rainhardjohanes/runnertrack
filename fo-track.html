@@ -115,7 +115,7 @@
 
     <script>
         // CREDENTIALS SUPABASE
-        const db = window.supabase.createClient('https://ksdulyitxvtfvxgoqotd.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZHVseWl0eHZ0ZnZ4Z29xb3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1ODgzNzEsImV4cCI6MjA5MTE2NDM3MX0.nJ4lUtAKKBt_NQu0vZo8Dn6R7GfuE4qpgEfGYkkvh40');
+        const db = window.supabase.createClient('https://ezmevzvxqbsvwxufapck.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV6bWV2enZ4cWJzdnd4dWZhcGNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxNzEyNzUsImV4cCI6MjA5OTc0NzI3NX0.mrbmvvU4sKQT3aFLGbtrrqbzKcRPSEViXRmEyfGSGPE');
         
         let currentUser = null;
         let activeVisit = null;
@@ -128,13 +128,19 @@
                 window.location.href = "index.html";
                 return;
             }
-            document.getElementById('header-name').innerText = currentUser.runner_name;
+            document.getElementById("header-name").innerText =
+    currentUser.runner_name || currentUser.full_name || currentUser.name;
 
             try {
                 // CEK KE DATABASE: Apakah ada kunjungan menggantung (Check-Out kosong)?
                 const { data, error } = await db.from('fo_visits')
                     .select('id, business_name, check_in_time')
-                    .eq('runner_name', currentUser.runner_name)
+                    .eq(
+    'runner_name',
+    currentUser.runner_name ||
+    currentUser.full_name ||
+    currentUser.name
+)
                     .is('check_out_time', null)
                     .order('check_in_time', { ascending: false })
                     .limit(1)
@@ -165,24 +171,40 @@
 
         async function loadMasterBusinesses() {
             try {
-                let userArea = null;
-                if (currentUser.role.toLowerCase() !== 'admin') {
-                    const { data: rData } = await db.from('master_runners').select('area_name').eq('runner_name', currentUser.runner_name).single();
-                    if (rData) userArea = rData.area_name;
-                }
+                let query = db
+    .from('master_businesses')
+    .select('business_name, area_name')
+    .order('business_name');
 
-                let query = db.from('master_businesses').select('business_name').order('business_name');
-                if (userArea) query = query.eq('area_name', userArea);
+const { data } = await query;
 
-                const { data } = await query;
-                
-                // Simpan ke array global
-                allMerchants = data ? data.map(b => b.business_name) : [];
-                
+if (currentUser.role.toLowerCase() === 'admin') {
+
+    allMerchants = data ? data.map(b => b.business_name) : [];
+
+} else {
+
+    const myAreas = currentUser.assigned_area
+        ? currentUser.assigned_area.split(',').map(a => a.trim())
+        : [];
+
+    allMerchants = data
+        ? data
+            .filter(b => myAreas.includes(b.area_name))
+            .map(b => b.business_name)
+        : [];
+
+}
+
                 if (allMerchants.length === 0) {
-                    searchInput.placeholder = "No merchants found in your area";
-                    searchInput.disabled = true;
-                }
+
+    searchInput.placeholder = "No merchant available";
+
+    searchInput.disabled = true;
+
+    alert("Account belum memiliki Assigned Area.");
+
+}
             } catch (e) { console.error("Failed to load merchant data.", e); }
         }
 
@@ -285,7 +307,10 @@
                 const now = new Date().toISOString();
                 
                 const { data, error } = await db.from('fo_visits').insert([{
-                    runner_name: currentUser.runner_name,
+                    runner_name:
+currentUser.runner_name ||
+currentUser.full_name ||
+currentUser.name,
                     business_name: biz,
                     visit_type: type,
                     check_in_time: now,
