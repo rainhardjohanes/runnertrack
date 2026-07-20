@@ -364,7 +364,7 @@ const db = createClient(
                 masterKitTypes = (await db.from('master_kit_types').select('*')).data || [];
                 masterSdrs = (await db.from('master_sdrs').select('*').order('sdr_name')).data || [];
 
-                if(currentUser.role === 'Staff') {
+                if(currentUser.role.toLowerCase() === 'staff') {
                     const myRunner = masterRunners.find(r => r.runner_name === currentUser.runner_name);
                     const myArea = myRunner ? myRunner.area_name : '';
                     document.getElementById('input-area').innerHTML = `<option value="${myArea}">${myArea}</option>`;
@@ -918,9 +918,10 @@ async function processSinglePayload(p) {
                 : "Deployed";
 
         const updateData = {
-            last_location: targetLocation,
-            status_deployment: deployment
-        };
+    last_location: targetLocation,
+    business_name: deployment === "Deployed" ? targetLocation : null,
+    status_deployment: deployment
+};
 
         if (p.device_condition === "Damaged") {
             updateData.current_status = "Damaged";
