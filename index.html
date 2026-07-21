@@ -360,7 +360,16 @@ const db = createClient(
                 masterAreas = (await db.from('master_areas').select('*').order('area_name')).data || [];
                 masterRunners = (await db.from('master_runners').select('*').order('runner_name')).data || [];
                 masterBusinesses = (await db.from('master_businesses').select('*').order('business_name')).data || [];
-                masterKitsData = (await db.from('master_kits').select('*').order('kit_id')).data || [];
+                let allKits = [];
+let fetchStart = 0;
+while (true) {
+    let { data } = await db.from('master_kits').select('*').order('kit_id').range(fetchStart, fetchStart + 999);
+    if (!data || data.length === 0) break;
+    allKits.push(...data);
+    if (data.length <= 999) break;
+    fetchStart += 1000;
+}
+masterKitsData = allKits;
                 masterKitTypes = (await db.from('master_kit_types').select('*')).data || [];
                 masterSdrs = (await db.from('master_sdrs').select('*').order('sdr_name')).data || [];
 
@@ -1244,16 +1253,22 @@ catch (err) {
                 globalTransactions = (await query).data || [];
                 
                 // Membaca status langsung dari master_kits agar sinkron dengan Admin
-                const { data: kitStatusData } = await db.from('master_kits').select('kit_id, last_location, status_deployment');
                 globalKitMap.clear();
-                if (kitStatusData) {
-                    kitStatusData.forEach(k => {
-                        globalKitMap.set(k.kit_id, { 
-                            location: k.last_location || 'Warehouse', 
-                            status: k.status_deployment || 'Available' 
-                        });
-                    });
-                }
+let statusStart = 0;
+while (true) {
+    let { data: kitStatusData } = await db.from('master_kits').select('kit_id, last_location, status_deployment').range(statusStart, statusStart + 999);
+    if (!kitStatusData || kitStatusData.length === 0) break;
+    
+    kitStatusData.forEach(k => {
+        globalKitMap.set(k.kit_id, { 
+            location: k.last_location || 'Warehouse', 
+            status: k.status_deployment || 'Available' 
+        });
+    });
+    
+    if (kitStatusData.length <= 999) break;
+    statusStart += 1000;
+}
 
                 let offlineQueue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
                 let offlineTrx = offlineQueue.map(q => ({...q, is_offline: true}));
