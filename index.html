@@ -171,6 +171,29 @@ class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 spac
 
 </div>
 
+<!-- PHASE 3: jumlah SD yang benar-benar di-upload -->
+<div id="field-sduploadqty"
+class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
+
+    <label
+    class="block text-[10px] font-black text-slate-400 uppercase tracking-widest">
+        Jumlah SD Card di Upload *
+    </label>
+
+    <input
+    id="input-sduploadqty"
+    type="number"
+    min="0"
+    step="1"
+    placeholder="Input SD Uploaded Quantity"
+    class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold">
+
+    <p class="text-[10px] text-slate-400 font-bold">
+        Bisa 0. Tidak boleh minus atau lebih besar dari SD Collected.
+    </p>
+
+</div>
+
 <div id="field-sdupload"
 class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
 
@@ -294,7 +317,25 @@ const db = createClient(
         let currentUser = null;
         let globalTransactions = [], globalKitMap = new Map();
         let masterAreas = [], masterRunners = [], masterBusinesses = [], masterKitsData = [], masterKitTypes = [], masterSdrs = [];
-        let selectedKits = []; 
+        let selectedKits = [];
+        let isSubmittingBusiness = false;
+
+        // Merchant dedupe key: same area + same business name (case/spacing insensitive)
+        function getBusinessKey(business) {
+            const area = String(business?.area_name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+            const name = String(business?.business_name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+            return `${area}::${name}`;
+        }
+
+        function dedupeBusinesses(rows) {
+            const seen = new Set();
+            return (rows || []).filter(business => {
+                const key = getBusinessKey(business);
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }
         
         /** AUTHENTICATION (SECURED) **/
         document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -359,7 +400,8 @@ const db = createClient(
             try {
                 masterAreas = (await db.from('master_areas').select('*').order('area_name')).data || [];
                 masterRunners = (await db.from('master_runners').select('*').order('runner_name')).data || [];
-                masterBusinesses = (await db.from('master_businesses').select('*').order('business_name')).data || [];
+                const businessResult = await db.from('master_businesses').select('*').order('business_name');
+                masterBusinesses = dedupeBusinesses(businessResult.data || []);
                 let allKits = [];
 let fetchStart = 0;
 while (true) {
@@ -403,9 +445,25 @@ masterKitsData = allKits;
 
         function renderBusinessList() {
             const area = document.getElementById('input-area').value;
-            const search = document.getElementById('search-business').value.toLowerCase();
-            const filtered = masterBusinesses.filter(b => (!area || b.area_name === area) && b.business_name.toLowerCase().includes(search));
-            document.getElementById('list-business').innerHTML = filtered.map(b => `<li class="p-5 hover:bg-slate-50 cursor-pointer font-black text-slate-700" onclick="selectBusiness('${b.business_name}')">${b.business_name}</li>`).join('');
+            const search = document.getElementById('search-business').value.toLowerCase().trim();
+
+            // Defensive dedupe: even if duplicate rows already exist in Supabase,
+            // only one merchant is ever rendered in the selector.
+            const filtered = dedupeBusinesses(masterBusinesses).filter(b =>
+                (!area || b.area_name === area) &&
+                String(b.business_name || '').toLowerCase().includes(search)
+            );
+
+            const listEl = document.getElementById('list-business');
+            listEl.innerHTML = '';
+
+            filtered.forEach(b => {
+                const li = document.createElement('li');
+                li.className = 'p-5 hover:bg-slate-50 cursor-pointer font-black text-slate-700';
+                li.textContent = b.business_name;
+                li.addEventListener('click', () => selectBusiness(b.business_name));
+                listEl.appendChild(li);
+            });
         }
 
         function getKitBadge(typeName) {
@@ -541,22 +599,78 @@ class="w-full p-3 border rounded-xl mb-3">
         function closeAddBizModal() { document.getElementById('modal-add-biz').classList.replace('flex', 'hidden'); }
 
         async function submitNewBusiness() {
-            if (!navigator.onLine) { alert("Internet connection required! You must be online to register a new location."); return; }
-            
+            if (isSubmittingBusiness) return;
+            if (!navigator.onLine) {
+                alert("Internet connection required! You must be online to register a new location.");
+                return;
+            }
+
             const area = document.getElementById('input-area').value;
-            const rawName = document.getElementById('input-new-biz-name').value.trim();
-            if(!rawName) return;
+            const rawName = document.getElementById('input-new-biz-name').value.trim().replace(/\s+/g, ' ');
+            if (!rawName) return;
+
             const finalName = `${rawName} - ${area}`;
-            
+            const candidate = { area_name: area, business_name: finalName };
+            const candidateKey = getBusinessKey(candidate);
+            const btn = document.getElementById('btn-submit-new-biz');
+
+            // Fast local duplicate guard.
+            const localExisting = masterBusinesses.find(b => getBusinessKey(b) === candidateKey);
+            if (localExisting) {
+                document.getElementById('input-new-biz-name').value = '';
+                closeAddBizModal();
+                selectBusiness(localExisting.business_name);
+                showToast("Location already exists. Existing merchant selected.", true);
+                return;
+            }
+
+            isSubmittingBusiness = true;
+            btn.disabled = true;
+            const originalButtonHTML = btn.innerHTML;
+            btn.innerHTML = `<div class="spinner mr-2"></div> Saving...`;
+
             try {
-                const { error } = await db.from('master_businesses').insert([{ area_name: area, business_name: finalName }]);
+                // Server-side duplicate check protects against stale local master data.
+                const { data: existingRows, error: checkError } = await db
+                    .from('master_businesses')
+                    .select('*')
+                    .eq('area_name', area)
+                    .ilike('business_name', finalName)
+                    .limit(1);
+
+                if (checkError) throw checkError;
+
+                if (existingRows && existingRows.length > 0) {
+                    masterBusinesses = dedupeBusinesses([...masterBusinesses, existingRows[0]]);
+                    document.getElementById('input-new-biz-name').value = '';
+                    closeAddBizModal();
+                    selectBusiness(existingRows[0].business_name);
+                    showToast("Location already exists. Existing merchant selected.", true);
+                    return;
+                }
+
+                const { data: insertedRows, error } = await db
+                    .from('master_businesses')
+                    .insert([{ area_name: area, business_name: finalName }])
+                    .select('*');
+
                 if (error) throw error;
-                
-                masterBusinesses.push({ area_name: area, business_name: finalName }); 
-                closeAddBizModal(); 
-                selectBusiness(finalName);
+
+                const inserted = insertedRows?.[0] || candidate;
+                masterBusinesses = dedupeBusinesses([...masterBusinesses, inserted]);
+
+                document.getElementById('input-new-biz-name').value = '';
+                closeAddBizModal();
+                selectBusiness(inserted.business_name);
                 showToast("New Location Registered!");
-            } catch (err) { alert("Failed to register location: " + err.message); }
+
+            } catch (err) {
+                alert("Failed to register location: " + err.message);
+            } finally {
+                isSubmittingBusiness = false;
+                btn.disabled = false;
+                btn.innerHTML = originalButtonHTML;
+            }
         }
 
         function toggleModal(id) {
@@ -585,7 +699,7 @@ class="w-full p-3 border rounded-xl mb-3">
 
         function toggleFormFields() {
             const phase = document.getElementById('input-phase').value;
-            ['field-kit', 'field-checklist', 'field-sd', 'field-commons', 'field-sdupload', 'field-sdr'].forEach(id => {
+            ['field-kit', 'field-checklist', 'field-sd', 'field-sduploadqty', 'field-commons', 'field-sdupload', 'field-sdr'].forEach(id => {
                 const el = document.getElementById(id);
                 if(el) el.classList.add('hidden');
             });
@@ -595,6 +709,7 @@ class="w-full p-3 border rounded-xl mb-3">
             document.getElementById('input-condition').value = "";
             document.getElementById('input-match').value = "";
             document.getElementById('input-sdupload').value = "";
+            document.getElementById('input-sduploadqty').value = "";
             // Hilangkan warna biru/aktif pada tombol toggle YES/NO/GOOD/DAMAGED
             document.querySelectorAll('.btn-toggle').forEach(btn => btn.classList.remove('active'));
             // ---------------------------------------
@@ -617,7 +732,10 @@ if(phase === 'Phase 2'){
                 pickUpInput.value = currentTime; dropOffInput.value = "";        
             } 
             else if (phase === 'Phase 3' || phase === 'Phase 4') { 
-                if(phase === 'Phase 3') { document.getElementById('field-sd').classList.remove('hidden'); document.getElementById('label-sd').innerText = "SD Collected Quantity *";
+                if(phase === 'Phase 3') {
+                    document.getElementById('field-sd').classList.remove('hidden');
+                    document.getElementById('field-sduploadqty').classList.remove('hidden');
+                    document.getElementById('label-sd').innerText = "SD Collected Quantity *";
                     document.getElementById('general-photo-container').classList.remove('hidden');
                  }
 if(phase === 'Phase 4') {
@@ -1000,6 +1118,7 @@ async function syncOfflineQueue() {
             let condition = document.getElementById('input-condition').value || null;
             let match = document.getElementById('input-match').value || null;
             let sdQtyRaw = document.getElementById('input-sd').value;
+            let sdUploadQtyRaw = document.getElementById('input-sduploadqty').value;
             
             let photoCount = 1;
             let sdrNameVal = document.getElementById('input-sdr-name').value || null;
@@ -1013,7 +1132,33 @@ async function syncOfflineQueue() {
             } else if (phase === 'Phase 2') {
                 if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
             } else if (phase === 'Phase 3') {
-                if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
+                if (sdQtyRaw === "") {
+                    alert("SD Collected Quantity wajib diisi!");
+                    return;
+                }
+
+                if (sdUploadQtyRaw === "") {
+                    alert("Jumlah SD Card di Upload wajib diisi! Isi 0 jika tidak ada SD yang di-upload.");
+                    return;
+                }
+
+                const collectedQty = Number(sdQtyRaw);
+                const uploadedQty = Number(sdUploadQtyRaw);
+
+                if (!Number.isInteger(collectedQty) || collectedQty < 0) {
+                    alert("SD Collected Quantity harus berupa angka bulat 0 atau lebih.");
+                    return;
+                }
+
+                if (!Number.isInteger(uploadedQty) || uploadedQty < 0) {
+                    alert("Jumlah SD Card di Upload harus berupa angka bulat 0 atau lebih.");
+                    return;
+                }
+
+                if (uploadedQty > collectedQty) {
+                    alert(`Jumlah SD Card di Upload (${uploadedQty}) tidak boleh lebih besar dari SD Collected (${collectedQty}).`);
+                    return;
+                }
             } else 
             if (phase === 'Phase 4') {
 
@@ -1044,7 +1189,8 @@ async function syncOfflineQueue() {
 
             
 
-            let sdQtyParsed = sdQtyRaw ? parseInt(sdQtyRaw) : null;
+            let sdQtyParsed = sdQtyRaw !== "" ? parseInt(sdQtyRaw, 10) : null;
+            let sdUploadQtyParsed = sdUploadQtyRaw !== "" ? parseInt(sdUploadQtyRaw, 10) : 0;
 
             try {
 
@@ -1064,11 +1210,11 @@ async function syncOfflineQueue() {
 
     sd_uploaded:
 
-phase==="Phase 3"
+phase === "Phase 3"
 
-?sdQtyParsed
+? sdUploadQtyParsed
 
-:0,
+: 0,
 
     gps_location: document.getElementById('input-gps').value,
 
@@ -1234,7 +1380,7 @@ catch (err) {
 
                 this.reset(); 
                 document.getElementById('input-sdr-name').value = ""; document.getElementById('input-condition').value = "";
-                document.getElementById('input-match').value = ""; document.getElementById('input-sdupload').value = "";
+                document.getElementById('input-match').value = ""; document.getElementById('input-sdupload').value = ""; document.getElementById('input-sduploadqty').value = "";
                 document.getElementById('checklist-items').innerHTML = ""; document.getElementById('input-business').value = ""; 
                 document.getElementById('label-business').innerText = "Select Location..."; document.getElementById('label-business').classList.add('text-slate-400');
                 document.getElementById('input-gps').value = ""; document.getElementById('gps-status').innerHTML = `<span class="font-bold text-red-600 italic uppercase">GPS Required</span>`;
