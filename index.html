@@ -251,6 +251,7 @@ class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-
         accept="image/*"
         capture="environment"
         class="w-full p-3 border rounded-xl">
+    <p class="mt-2 text-xs text-slate-500">Foto dikompresi otomatis, maksimal 100 KB.</p>
 </div>
                         <div>
                             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Other Item / Notes (Optional)</label>
@@ -392,41 +393,88 @@ const db = createClient(
             document.getElementById('app-container').classList.remove('hidden-view');
             document.getElementById('header-role').innerText = currentUser.role.toUpperCase();
             
-            fetchMasterData(); fetchData(); updateSyncUI();
+            const masterReady = await fetchMasterData();
+            if (masterReady) await fetchData(true);
+            else showToast('Gagal memuat data runner. Periksa koneksi dan muat ulang.', true);
+            updateSyncUI();
         }
 
         /** DATA LOADERS **/
+        function getRunnerDataAreas() {
+            if ((currentUser?.role || '').toLowerCase() === 'staff') {
+                const runner = masterRunners.find(r => r.runner_name === currentUser.runner_name);
+                if (!runner?.area_name) throw new Error('Region runner belum terdaftar. Hubungi admin.');
+                return [runner.area_name];
+            }
+            const assigned = (currentUser?.assigned_area || 'All').trim();
+            return assigned === 'All' ? ['All'] : assigned.split(',').map(area => area.trim()).filter(Boolean);
+        }
+
+        function scopeRunnerQuery(query, column) {
+            const areas = getRunnerDataAreas();
+            return areas.includes('All') ? query : query.in(column, areas);
+        }
+
+        async function fetchRunnerKits(columns) {
+            const kits = [];
+            let total = null;
+            while (true) {
+                const { data, count, error } = await scopeRunnerQuery(
+                    db.from('master_kits').select(columns, { count: 'exact' }), 'area_name')
+                    .order('kit_id').range(kits.length, kits.length + 999);
+                if (error) throw error;
+                if (!Array.isArray(data) || !Number.isInteger(count)) throw new Error('Data kit tidak lengkap.');
+                if (total === null) total = count;
+                if (total !== count) throw new Error('Data kit berubah. Silakan refresh.');
+                kits.push(...data);
+                if (kits.length === total) return kits;
+                if (!data.length || kits.length > total) throw new Error('Data kit belum lengkap.');
+            }
+        }
+
+        function updateRunnerKitMap(kits) {
+            globalKitMap.clear();
+            for (const kit of kits) globalKitMap.set(kit.kit_id, {
+                location: kit.last_location || 'Warehouse', status: kit.status_deployment || 'Available'
+            });
+        }
+
         async function fetchMasterData() {
             try {
-                masterAreas = (await db.from('master_areas').select('*').order('area_name')).data || [];
-                masterRunners = (await db.from('master_runners').select('*').order('runner_name')).data || [];
-                const businessResult = await db.from('master_businesses').select('*').order('business_name');
-                masterBusinesses = dedupeBusinesses(businessResult.data || []);
-                let allKits = [];
-let fetchStart = 0;
-while (true) {
-    let { data } = await db.from('master_kits').select('*').order('kit_id').range(fetchStart, fetchStart + 999);
-    if (!data || data.length === 0) break;
-    allKits.push(...data);
-    if (data.length <= 999) break;
-    fetchStart += 1000;
-}
-masterKitsData = allKits;
-                masterKitTypes = (await db.from('master_kit_types').select('*')).data || [];
-                masterSdrs = (await db.from('master_sdrs').select('*').order('sdr_name')).data || [];
-
-                if(currentUser.role.toLowerCase() === 'staff') {
-                    const myRunner = masterRunners.find(r => r.runner_name === currentUser.runner_name);
-                    const myArea = myRunner ? myRunner.area_name : '';
+                let runnersQuery = db.from('master_runners').select('id,runner_name,area_name').order('runner_name');
+                if ((currentUser.role || '').toLowerCase() === 'staff') runnersQuery = runnersQuery.eq('runner_name', currentUser.runner_name);
+                else runnersQuery = scopeRunnerQuery(runnersQuery, 'area_name');
+                const runnersResult = await runnersQuery;
+                if (runnersResult.error) throw runnersResult.error;
+                masterRunners = runnersResult.data || [];
+                // Resolve staff region before requesting any kit or merchant data.
+                getRunnerDataAreas();
+                const [areas, businesses, kits, types, sdrs] = await Promise.all([
+                    scopeRunnerQuery(db.from('master_areas').select('id,area_name').order('area_name'), 'area_name'),
+                    scopeRunnerQuery(db.from('master_businesses').select('id,business_name,area_name').order('business_name'), 'area_name'),
+                    fetchRunnerKits('id,kit_id,kit_type,area_name,current_status,last_location,status_deployment'),
+                    db.from('master_kit_types').select('*'),
+                    scopeRunnerQuery(db.from('master_sdrs').select('id,sdr_name,area_name').order('sdr_name'), 'area_name')
+                ]);
+                for (const response of [areas, businesses, types, sdrs]) if (response.error) throw response.error;
+                masterAreas = areas.data || [];
+                masterBusinesses = dedupeBusinesses(businesses.data || []);
+                masterKitsData = kits;
+                updateRunnerKitMap(kits);
+                masterKitTypes = types.data || [];
+                masterSdrs = sdrs.data || [];
+                if (currentUser.role.toLowerCase() === 'staff') {
+                    const myArea = getRunnerDataAreas()[0];
                     document.getElementById('input-area').innerHTML = `<option value="${myArea}">${myArea}</option>`;
                     document.getElementById('input-area').disabled = true;
                     document.getElementById('input-runner').innerHTML = `<option value="${currentUser.runner_name}">${currentUser.runner_name}</option>`;
                     document.getElementById('input-runner').disabled = true;
-                    filterByArea(); 
+                    filterByArea();
                 } else {
                     document.getElementById('input-area').innerHTML = `<option value="">-- Select Area --</option>` + masterAreas.map(a => `<option value="${a.area_name}">${a.area_name}</option>`).join('');
                 }
-            } catch(e) { console.error("Offline or Failed fetching master data.", e); }
+                return true;
+            } catch (error) { console.error('Gagal memuat data runner:', error); return false; }
         }
 
         function filterByArea() {
@@ -565,6 +613,7 @@ id="photo-${id}"
 accept="image/*"
 capture="environment"
 class="w-full p-3 border rounded-xl mb-3">
+<p class="mb-3 text-xs text-slate-500">Foto dikompresi otomatis, maksimal 100 KB.</p>
 
 
 </div>
@@ -939,19 +988,75 @@ document.getElementById('field-commons').classList.remove('hidden');            
             }
         }
 
+        const proofPhotoMaxBytes = 100000; // 100 KB, measured on the JPEG file (not base64 text).
+        const proofPhotoUploads = new Map();
+
+        function getBase64PhotoBytes(dataUrl) {
+            const encoded = dataUrl.slice(dataUrl.indexOf(',') + 1);
+            return Math.floor(encoded.length * 3 / 4) - (encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0);
+        }
+
         async function compressImageToBase64(file) {
-            return new Promise((res) => {
-                const reader = new FileReader(); reader.readAsDataURL(file);
-                reader.onload = e => {
-                    const img = new Image(); img.src = e.target.result;
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas'); let w = img.width, h = img.height; const max = 1024;
-                        if(w>h && w>max){h*=max/w; w=max;} else if(h>max){w*=max/h; h=max;}
-                        canvas.width = w; canvas.height = h; canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                        res(canvas.toDataURL('image/jpeg', 0.6));
-                    };
-                };
+            const source = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error('Foto tidak dapat dibaca.'));
+                reader.readAsDataURL(file);
             });
+            const img = await new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => resolve(image);
+                image.onerror = () => reject(new Error('Format foto tidak dapat diproses. Gunakan JPEG atau PNG.'));
+                image.src = source;
+            });
+            if (!img.width || !img.height) throw new Error('Foto tidak valid.');
+            if (file.type === 'image/jpeg' && file.size <= proofPhotoMaxBytes && Math.max(img.width, img.height) <= 1024) return source;
+            const canvas = document.createElement('canvas');
+            let maxEdge = Math.min(1024, Math.max(img.width, img.height));
+            while (maxEdge >= Math.min(192, Math.max(img.width, img.height))) {
+                const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+                canvas.width = Math.max(1, Math.round(img.width * scale));
+                canvas.height = Math.max(1, Math.round(img.height * scale));
+                const context = canvas.getContext('2d');
+                context.fillStyle = '#ffffff';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+                context.drawImage(img, 0, 0, canvas.width, canvas.height);
+                for (const quality of [0.6, 0.5, 0.4, 0.35]) {
+                    const result = canvas.toDataURL('image/jpeg', quality);
+                    if (getBase64PhotoBytes(result) <= proofPhotoMaxBytes) return result;
+                }
+                maxEdge = Math.floor(maxEdge * 0.8);
+            }
+            throw new Error('Foto belum dapat diperkecil hingga 100 KB. Ambil ulang foto lebih dekat dengan bukti yang diperlukan.');
+        }
+
+        async function uploadProofPhoto(dataUrl) {
+            let blob = await (await fetch(dataUrl)).blob();
+            // Old offline queues also receive the upload size limit.
+            if (blob.size > proofPhotoMaxBytes || blob.type !== 'image/jpeg') {
+                dataUrl = await compressImageToBase64(blob);
+                blob = await (await fetch(dataUrl)).blob();
+            }
+            // Validate the actual upload, including photos restored from old offline queues.
+            if (blob.type !== 'image/jpeg' || blob.size === 0 || blob.size > proofPhotoMaxBytes) {
+                throw new Error('Foto harus berupa JPEG dengan ukuran maksimal 100 KB. Ambil ulang foto lalu coba lagi.');
+            }
+            const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+            const hash = Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
+            if (proofPhotoUploads.has(hash)) return proofPhotoUploads.get(hash);
+            const filename = 'proof-' + hash + '.jpg';
+            const upload = (async () => {
+                const { error } = await db.storage.from('proofs').upload(filename, blob, {
+                    contentType: 'image/jpeg', cacheControl: '31536000', upsert: false
+                });
+                // Immutable content-addressed files can be reused across retries/devices.
+                if (error && String(error.statusCode) !== '409' && error.error !== 'Duplicate' && error.code !== 'Duplicate') throw error;
+                return db.storage.from('proofs').getPublicUrl(filename).data.publicUrl;
+            })();
+            proofPhotoUploads.set(hash, upload);
+            while (proofPhotoUploads.size > 20) proofPhotoUploads.delete(proofPhotoUploads.keys().next().value);
+            try { return await upload; }
+            catch (error) { if (proofPhotoUploads.get(hash) === upload) proofPhotoUploads.delete(hash); throw error; }
         }
 
         function showToast(msg, isWarning = false) {
@@ -978,25 +1083,11 @@ document.getElementById('field-commons').classList.remove('hidden');            
 
 async function processSinglePayload(p) {
 
-    let photoUrl = null;
-
-    if (p.photo_b64) {
-        const res = await fetch(p.photo_b64);
-        const blob = await res.blob();
-
-        const fName = `${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
-
-        const { error: upErr } = await db.storage
-            .from('proofs')
-            .upload(fName, blob);
-
-        if (upErr) throw upErr;
-        console.log("PHOTO OK");
-
-        photoUrl = db.storage
-            .from('proofs')
-            .getPublicUrl(fName)
-            .data.publicUrl;
+    let photoUrl = p.uploaded_photo_url || null;
+    if (p.photo_b64 && !photoUrl) {
+        photoUrl = await uploadProofPhoto(p.photo_b64);
+        // Persist the uploaded reference when an offline/retried transaction fails.
+        p.uploaded_photo_url = photoUrl;
     }
 
     const { error: dbErr } = await db
@@ -1386,35 +1477,31 @@ catch (err) {
                 document.getElementById('input-gps').value = ""; document.getElementById('gps-status').innerHTML = `<span class="font-bold text-red-600 italic uppercase">GPS Required</span>`;
                 document.querySelectorAll('.btn-toggle').forEach(btn => btn.classList.remove('active'));
                 
-                toggleFormFields(); fetchData(); switchTab('dashboard'); 
+                toggleFormFields(); switchTab('dashboard'); 
 
             } catch (e) { alert("Application Error: " + e.message); } 
             finally { btnLoad.classList.add('hidden'); document.getElementById('btn-submit').disabled = false; }
         });
 
-        async function fetchData() {
+        async function fetchData(reuseKitStatus = false) {
             try {
-                let query = db.from('transactions').select('*').order('created_at', { ascending: false }).limit(200); 
-                if(currentUser.role === 'Staff') query = query.eq('runner_name', currentUser.runner_name);
-                globalTransactions = (await query).data || [];
-                
-                // Membaca status langsung dari master_kits agar sinkron dengan Admin
-                globalKitMap.clear();
-let statusStart = 0;
-while (true) {
-    let { data: kitStatusData } = await db.from('master_kits').select('kit_id, last_location, status_deployment').range(statusStart, statusStart + 999);
-    if (!kitStatusData || kitStatusData.length === 0) break;
-    
-    kitStatusData.forEach(k => {
-        globalKitMap.set(k.kit_id, { 
-            location: k.last_location || 'Warehouse', 
-            status: k.status_deployment || 'Available' 
-        });
-    });
-    
-    if (kitStatusData.length <= 999) break;
-    statusStart += 1000;
-}
+                let query = db.from('transactions')
+                    .select('id,created_at,phase,business_name,runner_name,kit_id,sd_qty,other_item')
+                    .order('created_at', { ascending: false }).limit(50);
+                if ((currentUser.role || '').toLowerCase() === 'staff') query = query.eq('runner_name', currentUser.runner_name);
+                else query = scopeRunnerQuery(query, 'area');
+                const { data, error } = await query;
+                if (error) throw error;
+                globalTransactions = data || [];
+                if (!reuseKitStatus) {
+                    const kitStatusData = await fetchRunnerKits('kit_id,last_location,status_deployment,current_status');
+                    updateRunnerKitMap(kitStatusData);
+                    const statusById = new Map(kitStatusData.map(kit => [kit.kit_id, kit]));
+                    for (const kit of masterKitsData) {
+                        const latest = statusById.get(kit.kit_id);
+                        if (latest) Object.assign(kit, latest);
+                    }
+                }
 
                 let offlineQueue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
                 let offlineTrx = offlineQueue.map(q => ({...q, is_offline: true}));
