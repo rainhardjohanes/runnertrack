@@ -389,7 +389,7 @@ currentUser.name,
                 showCheckinUI();
 
             } catch (err) {
-                alert("Check-Out Error: " + (err.message || err));
+                alert("Check-Out belum tersimpan: " + (err.message || err) + "\nFoto dan isian tetap ada. Jangan tutup halaman; coba kembali setelah kendala teratasi.");
             } finally {
                 toggleBtn('checkout', false);
             }
@@ -455,33 +455,110 @@ currentUser.name,
             throw new Error('Foto belum dapat diperkecil hingga 100 KB. Ambil ulang foto lebih dekat dengan bukti yang diperlukan.');
         }
 
+        const PHOTO_UPLOAD_ORIGIN = 'https://atlas-logistic-photo-archive.rainhardjohanes.workers.dev';
+
+        function photoUploadError(message, code = 'photo_upload_unavailable') {
+            const error = new Error(message);
+            error.code = code;
+            // A shared photo-service failure should stop a whole offline batch.
+            error.stopPhotoQueue = true;
+            return error;
+        }
+
+        function showPhotoStorageWarning(reason) {
+            let notice = document.getElementById('photo-storage-warning');
+            if (!notice) {
+                notice = document.createElement('div');
+                notice.id = 'photo-storage-warning';
+                notice.setAttribute('role', 'status');
+                notice.style.cssText = 'margin:12px 0;padding:12px;border:1px solid #f59e0b;border-radius:12px;background:#fffbeb;color:#92400e;font-size:12px;line-height:1.5;';
+                const target = document.getElementById('runnerForm') || document.getElementById('view-checkout');
+                target?.prepend(notice);
+            }
+            notice.textContent = reason === 'operations_near_limit'
+                ? 'Jumlah unggahan foto mendekati batas sementara. Unggahan ini berhasil. Hubungi admin jika unggahan berikutnya tertunda sampai batas direset.'
+                : reason === 'storage_near_limit'
+                    ? 'Penyimpanan foto mendekati batas. Unggahan ini berhasil; hubungi admin untuk menyediakan ruang sebelum unggahan berikutnya dihentikan.'
+                    : 'Penggunaan foto mendekati batas aman. Unggahan ini berhasil. Hubungi admin untuk memeriksa kapasitas dan batas unggahan.';
+        }
+
+        async function sendProofPhoto(blob, hash, session) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 35000);
+            try {
+                // Only this fixed trusted origin receives the session token.
+                const request = token => fetch(PHOTO_UPLOAD_ORIGIN + '/uploads', {
+                    method: 'POST', body: blob,
+                    headers: {Authorization: 'Bearer ' + token, 'Content-Type': 'image/jpeg', 'X-Photo-SHA256': hash},
+                    credentials: 'omit', redirect: 'error', cache: 'no-store', signal: controller.signal
+                });
+                let response = await request(session.access_token);
+                if (response.status === 401) {
+                    const {data, error} = await new Promise((resolve, reject) => {
+                        const abort = () => reject(photoUploadError('Waktu memperbarui sesi login habis. Foto belum terkirim; coba kembali.', 'photo_auth_required'));
+                        if (controller.signal.aborted) { abort(); return; }
+                        controller.signal.addEventListener('abort', abort, {once: true});
+                        db.auth.refreshSession().then(resolve, reject).finally(() => controller.signal.removeEventListener('abort', abort));
+                    });
+                    if (error || !data?.session?.access_token || data.session.user?.id !== session.user.id || controller.signal.aborted) {
+                        throw photoUploadError('Sesi login berakhir. Login kembali, lalu kirim ulang foto yang belum terkirim.', 'photo_auth_required');
+                    }
+                    session = data.session;
+                    response = await request(session.access_token);
+                }
+                let result = null;
+                if ((response.headers.get('Content-Type') || '').toLowerCase().includes('application/json')) {
+                    const text = await response.text();
+                    if (text.length <= 8192) { try { result = JSON.parse(text); } catch {} }
+                }
+                if (!response.ok) {
+                    const code = result?.code || result?.reason || result?.error;
+                    if (code === 'reservation_limit') throw photoUploadError('Jumlah foto mencapai batas aman. Foto belum terkirim. Hubungi admin untuk menyediakan kapasitas, lalu coba lagi.', 'reservation_limit');
+                    if (code === 'quota_disabled') throw photoUploadError('Unggahan foto dihentikan sementara. Foto belum terkirim. Hubungi admin lalu coba kembali setelah unggahan dibuka.', 'quota_disabled');
+                    if (code === 'storage_limit' || response.status === 507) throw photoUploadError('Penyimpanan foto mencapai batas aman. Foto belum terkirim. Hubungi admin untuk menyediakan ruang, lalu coba lagi.', 'storage_limit');
+                    if (['monthly_write_limit', 'daily_limit', 'user_daily_limit'].includes(code) || response.status === 429) throw photoUploadError('Batas unggahan foto sementara tercapai. Foto belum terkirim. Coba kembali setelah batas direset atau hubungi admin.', 'photo_rate_limit');
+                    if (response.status === 401) throw photoUploadError('Sesi login berakhir. Login kembali, lalu kirim ulang foto yang belum terkirim.', 'photo_auth_required');
+                    if (response.status === 403) throw photoUploadError('Akun ini belum diizinkan mengunggah foto. Hubungi admin; foto belum terkirim.', 'photo_forbidden');
+                    if (response.status === 413) throw photoUploadError('Ukuran foto melebihi 100 KB. Pilih ulang foto agar diperkecil.', 'photo_too_large');
+                    throw photoUploadError('Layanan foto sementara tidak tersedia. Foto belum terkirim. Periksa koneksi lalu coba kembali.');
+                }
+                const expectedURL = PHOTO_UPLOAD_ORIGIN + '/photos/uploads/' + session.user.id + '/' + hash + '.jpg';
+                if (result?.url !== expectedURL) throw photoUploadError('Konfirmasi unggahan foto tidak valid. Foto belum dikirim ke transaksi; coba kembali.');
+                if (result.warning || result.warning_code) showPhotoStorageWarning(result.warning_code ?? result.warning);
+                return expectedURL;
+            } catch (error) {
+                if (error?.stopPhotoQueue) throw error;
+                throw photoUploadError(controller.signal.aborted
+                    ? 'Unggahan foto melebihi 35 detik. Foto belum terkirim; periksa koneksi lalu coba lagi.'
+                    : 'Koneksi saat mengunggah foto terputus. Foto belum terkirim; periksa koneksi lalu coba lagi.');
+            } finally { clearTimeout(timeout); }
+        }
+
         async function uploadProofPhoto(dataUrl) {
             let blob = await (await fetch(dataUrl)).blob();
-            // Old offline queues also receive the upload size limit.
+            // Recompress old queued photos too, before any network upload.
             if (blob.size > proofPhotoMaxBytes || blob.type !== 'image/jpeg') {
                 dataUrl = await compressImageToBase64(blob);
                 blob = await (await fetch(dataUrl)).blob();
             }
-            // Validate the actual upload, including photos restored from old offline queues.
             if (blob.type !== 'image/jpeg' || blob.size === 0 || blob.size > proofPhotoMaxBytes) {
                 throw new Error('Foto harus berupa JPEG dengan ukuran maksimal 100 KB. Ambil ulang foto lalu coba lagi.');
             }
+            const {data, error} = await db.auth.getSession();
+            const session = data?.session;
+            if (error || !session?.access_token || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.user?.id || '')) {
+                throw photoUploadError('Sesi login berakhir. Login kembali, lalu kirim ulang foto yang belum terkirim.', 'photo_auth_required');
+            }
             const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
             const hash = Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
-            if (proofPhotoUploads.has(hash)) return proofPhotoUploads.get(hash);
-            const filename = 'proof-' + hash + '.jpg';
-            const upload = (async () => {
-                const { error } = await db.storage.from('proofs').upload(filename, blob, {
-                    contentType: 'image/jpeg', cacheControl: '31536000', upsert: false
-                });
-                // Immutable content-addressed files can be reused across retries/devices.
-                if (error && String(error.statusCode) !== '409' && error.error !== 'Duplicate' && error.code !== 'Duplicate') throw error;
-                return db.storage.from('proofs').getPublicUrl(filename).data.publicUrl;
-            })();
-            proofPhotoUploads.set(hash, upload);
+            const cacheKey = session.user.id + ':' + hash;
+            if (proofPhotoUploads.has(cacheKey)) return proofPhotoUploads.get(cacheKey);
+            // Immutable per-user content keys make retries safe without another copy.
+            const upload = sendProofPhoto(blob, hash, session);
+            proofPhotoUploads.set(cacheKey, upload);
             while (proofPhotoUploads.size > 20) proofPhotoUploads.delete(proofPhotoUploads.keys().next().value);
             try { return await upload; }
-            catch (error) { if (proofPhotoUploads.get(hash) === upload) proofPhotoUploads.delete(hash); throw error; }
+            catch (error) { if (proofPhotoUploads.get(cacheKey) === upload) proofPhotoUploads.delete(cacheKey); throw error; }
         }
 
     </script>
