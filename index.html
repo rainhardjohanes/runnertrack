@@ -63,7 +63,7 @@
                     <p class="text-xs font-black text-amber-800 uppercase tracking-widest"><i class="fa-solid fa-cloud-arrow-up mr-2"></i>Pending Sync</p>
                     <p class="text-[10px] text-amber-700 font-bold mt-1"><span id="sync-count">0</span> logs saved locally.</p>
                 </div>
-                <button onclick="syncOfflineQueue()" id="btn-sync-now" class="bg-amber-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md hover:bg-amber-600 transition"><i class="fa-solid fa-rotate mr-1"></i> Sync</button>
+                <button onclick="syncOfflineQueue(true)" id="btn-sync-now" class="bg-amber-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md hover:bg-amber-600 transition"><i class="fa-solid fa-rotate mr-1"></i> Sync</button>
             </div>
 
             <div class="flex justify-between items-center mb-4 mt-2">
@@ -116,8 +116,9 @@ class="space-y-6 pb-28">
                 </div>
 
                 <div id="field-sdr" class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
-                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">SDR Name (Sales) *</label>
-                    <select id="input-sdr-name" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"></select>
+                    <label for="input-sdr-name" class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">SDR Name (Sales) *</label>
+                    <p id="sdr-adjustment-hint" class="hidden text-xs text-amber-700">SDR terakhir belum tercatat. Pilih SDR untuk Phase 1 penyesuaian.</p>
+                    <select id="input-sdr-name" onchange="updateKitTransitionPreview()" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-700 outline-none"></select>
                 </div>
 
                 <div id="field-kit" class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
@@ -128,6 +129,7 @@ class="space-y-6 pb-28">
                         <span>Select Kit</span>
                         <i class="fa-solid fa-plus"></i>
                     </button>
+                    <div id="kit-transition-preview" class="hidden text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 space-y-3" aria-live="polite"></div>
                     <p id="kit-error" class="text-[11px] text-red-600 font-bold hidden bg-red-50 p-3 rounded-xl border border-red-100 italic"></p>
                 </div>
 
@@ -320,6 +322,7 @@ const db = createClient(
         let masterAreas = [], masterRunners = [], masterBusinesses = [], masterKitsData = [], masterKitTypes = [], masterSdrs = [];
         let selectedKits = [];
         let isSubmittingBusiness = false;
+        let runnerSubmitRunning = false;
 
         // Merchant dedupe key: same area + same business name (case/spacing insensitive)
         function getBusinessKey(business) {
@@ -435,7 +438,8 @@ const db = createClient(
         function updateRunnerKitMap(kits) {
             globalKitMap.clear();
             for (const kit of kits) globalKitMap.set(kit.kit_id, {
-                location: kit.last_location || 'Warehouse', status: kit.status_deployment || 'Available'
+                location: normalizeKitLocation(kit.last_location), status: kit.status_deployment || 'Available',
+                last_sdr_name: kit.last_sdr_name || null, current_status: kit.current_status || null
             });
         }
 
@@ -452,7 +456,7 @@ const db = createClient(
                 const [areas, businesses, kits, types, sdrs] = await Promise.all([
                     scopeRunnerQuery(db.from('master_areas').select('id,area_name').order('area_name'), 'area_name'),
                     scopeRunnerQuery(db.from('master_businesses').select('id,business_name,area_name').order('business_name'), 'area_name'),
-                    fetchRunnerKits('id,kit_id,kit_type,area_name,current_status,last_location,status_deployment'),
+                    fetchRunnerKits('id,kit_id,kit_type,area_name,current_status,last_location,status_deployment,last_sdr_name'),
                     db.from('master_kit_types').select('*'),
                     scopeRunnerQuery(db.from('master_sdrs').select('id,sdr_name,area_name').order('sdr_name'), 'area_name')
                 ]);
@@ -522,38 +526,100 @@ const db = createClient(
             return { icon: '<i class="fa-solid fa-box mr-1"></i>', colorClass: 'bg-slate-100 text-slate-600 border-slate-200' };
         }
 
+        function runnerEscapeHTML(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        function normalizeKitLocation(value) {
+            const location = String(value || '').trim();
+            return !location || location.toLowerCase() === 'warehouse' ? 'Warehouse' : location;
+        }
+
+        function getKitTransitionPlan(phase, business, kit) {
+            const location = normalizeKitLocation(kit.last_location);
+            const steps = [];
+            const add = (stepPhase, merchant, from, to, adjustment) => steps.push({
+                phase: stepPhase, business_name: merchant, from, to, is_location_adjustment: adjustment
+            });
+            if (phase === 'Phase 1') {
+                if (location !== 'Warehouse') add('Phase 4', location, location, 'Warehouse', true);
+                add('Phase 1', business, 'Warehouse', business, false);
+            } else if (phase === 'Phase 4') {
+                if (location !== business) {
+                    if (location !== 'Warehouse') add('Phase 4', location, location, 'Warehouse', true);
+                    add('Phase 1', business, 'Warehouse', business, true);
+                }
+                add('Phase 4', business, business, 'Warehouse', false);
+            } else throw new Error('Fase perpindahan kit tidak valid.');
+            return {location, steps, needsAdjustmentSdr: phase === 'Phase 4' && location !== business,
+                finalLocation: phase === 'Phase 4' ? 'Warehouse' : business};
+        }
+
+        function getFormKitOperations() {
+            // Explicitly selected kits take precedence, so each kit uses its own photo.
+            const operations = new Map(selectedKits.map(id => [id, {kit_id: id, photoKitId: id, pairedWith: null}]));
+            for (const id of selectedKits) {
+                const pairedId = document.getElementById(`paired-device-${id}`)?.value;
+                if (pairedId && pairedId !== 'STANDALONE' && !operations.has(pairedId)) {
+                    operations.set(pairedId, {kit_id: pairedId, photoKitId: id, pairedWith: id});
+                }
+            }
+            return Array.from(operations.values());
+        }
+
+        function updateKitTransitionPreview() {
+            const phase = document.getElementById('input-phase').value;
+            const business = document.getElementById('input-business').value;
+            const preview = document.getElementById('kit-transition-preview');
+            const sdrField = document.getElementById('field-sdr');
+            const sdrHint = document.getElementById('sdr-adjustment-hint');
+            const operations = getFormKitOperations();
+            let needsFallback = false;
+            if (!business || !operations.length || !['Phase 1', 'Phase 4'].includes(phase)) {
+                preview.classList.add('hidden');
+                if (phase === 'Phase 4') sdrField.classList.add('hidden');
+                sdrHint.classList.add('hidden');
+                return;
+            }
+            preview.innerHTML = operations.map(operation => {
+                const kit = masterKitsData.find(item => item.kit_id === operation.kit_id);
+                if (!kit) return `<p>${runnerEscapeHTML(operation.kit_id)}: data belum tersedia.</p>`;
+                const plan = getKitTransitionPlan(phase, business, kit);
+                const lastSdr = String(kit.last_sdr_name || '').trim();
+                if (plan.needsAdjustmentSdr && !lastSdr) needsFallback = true;
+                const sdr = lastSdr || document.getElementById('input-sdr-name').value;
+                return `<div><p class="font-black">${runnerEscapeHTML(kit.kit_id)}${operation.pairedWith ? ' · pasangan ' + runnerEscapeHTML(operation.pairedWith) : ''}</p>
+                    <p>Tercatat di ${runnerEscapeHTML(plan.location)} · ${runnerEscapeHTML(kit.current_status || 'Kondisi belum tercatat')}</p>
+                    <ol class="list-decimal ml-4 mt-1">${plan.steps.map(step => `<li>${step.phase}: ${runnerEscapeHTML(step.from)} → ${runnerEscapeHTML(step.to)}${step.is_location_adjustment ? ' (penyesuaian otomatis)' : ''}</li>`).join('')}</ol>
+                    ${plan.needsAdjustmentSdr ? `<p class="mt-1">SDR penyesuaian: ${runnerEscapeHTML(sdr || 'Pilih SDR di atas')}${lastSdr ? ' (SDR terakhir kit)' : ''}</p>` : ''}
+                    ${kit.current_status === 'Damaged' ? '<p class="mt-1 font-bold">Status Damaged tetap tercatat saat kit diproses.</p>' : ''}</div>`;
+            }).join('') + '<p class="border-t border-amber-200 pt-2">Foto dan jumlah SD hanya dicatat pada transaksi terakhir. Rute diperiksa kembali saat dikirim.</p>';
+            preview.classList.remove('hidden');
+            if (phase === 'Phase 4') sdrField.classList.toggle('hidden', !needsFallback);
+            sdrHint.classList.toggle('hidden', !needsFallback || phase !== 'Phase 4');
+        }
+
         function renderKitList() {
             const area = document.getElementById('input-area').value;
-            const phase = document.getElementById('input-phase').value;
-            const search = document.getElementById('search-kit').value.toUpperCase();
-            const business = document.getElementById('input-business').value;
-            const listEl = document.getElementById('list-kit');
-            
-            let filtered = masterKitsData.filter(k => {
-                const areaMatch = !area || k.area_name === area;
-                const searchMatch = k.kit_id.includes(search);
-                const conditionMatch = (phase === 'Phase 4') ? true : (k.current_status === 'Good');
-                
-                const kitState = globalKitMap.get(k.kit_id) || { status: 'Available', location: 'Warehouse' };
-                let phaseMatch = true;
-                const isAdmin = currentUser.role.toLowerCase() === 'admin';
-                
-                if (!isAdmin) {
-                    if (phase === 'Phase 1') phaseMatch = (kitState.status === 'Available');
-                    if (phase === 'Phase 4') phaseMatch = (kitState.status === 'Deployed' && kitState.location === business);
-                }
-
-                return areaMatch && searchMatch && conditionMatch && phaseMatch;
+            const search = document.getElementById('search-kit').value.toUpperCase().trim();
+            const allowedAreas = getRunnerDataAreas();
+            const filtered = masterKitsData.filter(kit =>
+                (!area || kit.area_name === area) &&
+                (allowedAreas.includes('All') || allowedAreas.includes(kit.area_name)) &&
+                String(kit.kit_id).toUpperCase().includes(search));
+            const list = document.getElementById('list-kit');
+            list.innerHTML = '';
+            if (!filtered.length) { list.innerHTML = '<li class="p-10 text-center text-slate-400 text-xs italic">Tidak ada kit yang cocok dengan pencarian di area ini.</li>'; return; }
+            filtered.forEach(kit => {
+                const row = document.createElement('li');
+                row.className = 'p-5 hover:bg-slate-50 cursor-pointer transition';
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'w-full text-left';
+                button.innerHTML = `<span class="font-black text-slate-800">${runnerEscapeHTML(kit.kit_id)}</span><span class="block text-xs text-slate-500 mt-1">${runnerEscapeHTML(kit.kit_type)} · ${runnerEscapeHTML(kit.current_status || 'Belum tercatat')}</span><span class="block text-xs text-blue-700 mt-1">Lokasi: ${runnerEscapeHTML(normalizeKitLocation(kit.last_location))}</span>`;
+                button.addEventListener('click', () => selectKit(kit.kit_id));
+                row.appendChild(button); list.appendChild(row);
             });
-
-            if(filtered.length === 0) listEl.innerHTML = `<li class="p-10 text-center text-slate-400 text-xs italic">No eligible Good kits found for this location.</li>`;
-            else listEl.innerHTML = filtered.map(k => {
-                const badge = getKitBadge(k.kit_type);
-                return `<li class="p-5 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition" onclick="selectKit('${k.kit_id}')">
-                    <span class="font-black text-slate-800">${k.kit_id}</span>
-                    <span class="text-[9px] font-black uppercase px-2 py-1 rounded border shadow-sm flex items-center ${badge.colorClass}">${badge.icon} ${k.kit_type}</span>
-                </li>`;
-            }).join('');        
         }
 
         function selectBusiness(name) {
@@ -581,47 +647,29 @@ function selectKit(id) {
 }
 
 function renderSelectedKits() {
-
     const container = document.getElementById('selected-kits-container');
     const photoContainer = document.getElementById('kit-photo-container');
-
     container.innerHTML = '';
-    photoContainer.innerHTML = '';
-
+    // Preserve existing file inputs: adding/removing another kit must not discard photos.
+    for (const block of Array.from(photoContainer.children)) {
+        if (!selectedKits.includes(block.dataset.kitId)) block.remove();
+    }
     selectedKits.forEach(id => {
-
-        container.innerHTML += `
-            <div class="bg-blue-600 text-white px-3 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-md">
-                ${id}
-                <button type="button"
-                    onclick="removeKit('${id}')">
-                    <i class="fa-solid fa-circle-xmark"></i>
-                </button>
-            </div>
-        `;
-
-        photoContainer.innerHTML += `
-<div class="border rounded-2xl p-4 bg-slate-50">
-
-<div class="font-black mb-2">
-${id}
-</div>
-
-<input
-type="file"
-id="photo-${id}"
-accept="image/*"
-capture="environment"
-class="w-full p-3 border rounded-xl mb-3">
-<p class="mb-3 text-xs text-slate-500">Foto dikompresi otomatis, maksimal 100 KB.</p>
-
-
-</div>
-`;
+        const badge = document.createElement('div');
+        badge.className = 'bg-blue-600 text-white px-3 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-md';
+        badge.appendChild(document.createTextNode(id));
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.setAttribute('aria-label', 'Hapus pilihan ' + id);
+        remove.innerHTML = '<i class="fa-solid fa-circle-xmark"></i>';
+        remove.addEventListener('click', () => removeKit(id)); badge.appendChild(remove); container.appendChild(badge);
+        if (!document.getElementById('photo-' + id)) {
+            const block = document.createElement('div');
+            block.dataset.kitId = id; block.className = 'border rounded-2xl p-4 bg-slate-50';
+            block.innerHTML = `<label for="photo-${runnerEscapeHTML(id)}" class="block font-black mb-2">${runnerEscapeHTML(id)}</label><input type="file" id="photo-${runnerEscapeHTML(id)}" accept="image/*" capture="environment" class="w-full p-3 border rounded-xl mb-3"><p class="mb-3 text-xs text-slate-500">Foto dikompresi otomatis, maksimal 100 KB.</p>`;
+            photoContainer.appendChild(block);
+        }
     });
-
-    document.getElementById('input-kit').value =
-        selectedKits.join(',');
+    document.getElementById('input-kit').value = selectedKits.join(',');
 }
 
         function removeKit(id) {
@@ -759,6 +807,7 @@ class="w-full p-3 border rounded-xl mb-3">
             document.getElementById('input-match').value = "";
             document.getElementById('input-sdupload').value = "";
             document.getElementById('input-sduploadqty').value = "";
+            document.getElementById('input-sdr-name').value = "";
             // Hilangkan warna biru/aktif pada tombol toggle YES/NO/GOOD/DAMAGED
             document.querySelectorAll('.btn-toggle').forEach(btn => btn.classList.remove('active'));
             // ---------------------------------------
@@ -801,183 +850,44 @@ document.getElementById('field-commons').classList.remove('hidden');            
 
         function validateKit() {
             const phase = document.getElementById('input-phase').value;
-            const business = document.getElementById('input-business').value;
             const errLabel = document.getElementById('kit-error');
             const btnSubmit = document.getElementById('btn-submit');
-            
-            errLabel.classList.add('hidden'); btnSubmit.disabled = false; document.getElementById('field-checklist').classList.add('hidden');
-            
-            if(selectedKits.length === 0 || (phase !== 'Phase 1' && phase !== 'Phase 4')) return;
-
-            const isAdmin = currentUser.role.toLowerCase() === 'admin';
-            let checklistHTML = ''; 
-            let overrideMessages = [];
-            
-            // Variabel untuk menyimpan Wristcam yang sudah otomatis ter-assign di loop ini
-            let usedOrphans = new Set(); 
-
-            for (let kitId of selectedKits) {
-                const kitMaster = masterKitsData.find(k => k.kit_id === kitId);
-                const kitState = globalKitMap.get(kitId) || { status: 'Available', location: 'Warehouse' };
-
-                if(!kitMaster) { 
-                    errLabel.innerText = `ERROR: ID ${kitId} not recognized.`; 
-                    errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+            const checklist = document.getElementById('checklist-items');
+            const checkedValues = new Set(Array.from(checklist.querySelectorAll('input[type="checkbox"]:checked')).map(el => JSON.stringify([el.name, el.value])));
+            const previousPairs = new Map(Array.from(checklist.querySelectorAll('select[id^="paired-device-"]')).map(el => [el.id, el.value]));
+            errLabel.classList.add('hidden');
+            btnSubmit.disabled = runnerSubmitRunning;
+            document.getElementById('field-checklist').classList.add('hidden');
+            if (!selectedKits.length || !['Phase 1', 'Phase 4'].includes(phase)) { updateKitTransitionPreview(); return; }
+            const area = document.getElementById('input-area').value;
+            const allowedAreas = getRunnerDataAreas();
+            let html = '';
+            for (const kitId of selectedKits) {
+                const kit = masterKitsData.find(item => item.kit_id === kitId);
+                if (!kit || kit.area_name !== area || (!allowedAreas.includes('All') && !allowedAreas.includes(kit.area_name))) {
+                    errLabel.textContent = `Kit ${kitId} tidak tersedia untuk area ini. Pilih ulang kit.`;
+                    errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return;
                 }
-                if(kitMaster.current_status === 'Damaged') { 
-                    errLabel.innerText = `REJECTED: Kit ${kitId} is QUARANTINED.`; 
-                    errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
+                const recipe = masterKitTypes.find(type => type.type_name === kit.kit_type);
+                const items = String(recipe?.checklist_items || '').split(',').map(value => value.trim()).filter(Boolean);
+                let pairing = '';
+                if (recipe?.requires_pairing && recipe.paired_with_type) {
+                    const pairs = masterKitsData.filter(item => item.kit_type === recipe.paired_with_type && item.area_name === area && item.kit_id !== kitId);
+                    pairing = `<div class="mt-4 p-4 bg-slate-50 border rounded-xl"><label for="paired-device-${runnerEscapeHTML(kitId)}" class="block text-xs font-bold mb-2">Pasangkan dengan ${runnerEscapeHTML(recipe.paired_with_type)}</label><select id="paired-device-${runnerEscapeHTML(kitId)}" onchange="updateKitTransitionPreview()" class="w-full p-3 rounded-xl border text-sm font-bold"><option value="STANDALONE">Tanpa kit pasangan tambahan</option>${pairs.map(item => `<option value="${runnerEscapeHTML(item.kit_id)}">${runnerEscapeHTML(item.kit_id)} · ${runnerEscapeHTML(normalizeKitLocation(item.last_location))} · ${runnerEscapeHTML(item.current_status)}</option>`).join('')}</select><p class="text-xs text-slate-500 mt-2">Kit pasangan ikut diproses dan ditampilkan pada rute konfirmasi. Pilih hanya kit yang benar-benar ikut.</p></div>`;
                 }
-                
-                if (!isAdmin) {
-                    if(phase === 'Phase 1' && kitState.status !== 'Available') { 
-                        errLabel.innerText = `REJECTED: ${kitId} is already deployed at ${kitState.location}`; 
-                        errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
-                    }
-                    if(phase === 'Phase 4') {
-                        if(kitState.status !== 'Deployed') { 
-                            errLabel.innerText = `REJECTED: ${kitId} is already in Warehouse.`; 
-                            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
-                        }
-                        if(kitState.location !== business) { 
-                            errLabel.innerText = `REJECTED: ${kitId} belongs to ${kitState.location}.`; 
-                            errLabel.classList.remove('hidden'); btnSubmit.disabled = true; return; 
-                        }
-                    }
-                } else {
-                    errLabel.className = "text-[11px] font-bold hidden bg-amber-50 p-3 rounded-xl border border-amber-200 italic text-amber-600";
-                    if(phase === 'Phase 1' && kitState.status !== 'Available') overrideMessages.push(`${kitId} at ${kitState.location}`);
-                    if(phase === 'Phase 4' && kitState.status !== 'Deployed') overrideMessages.push(`${kitId} in Warehouse`);
-                    else if(phase === 'Phase 4' && kitState.location !== business) overrideMessages.push(`${kitId} at ${kitState.location}`);
-                }
-
-                const recipe = masterKitTypes.find(t => t.type_name === kitMaster.kit_type);
-                let itemsHTML = '';
-                if(recipe) {
-                    itemsHTML = recipe.checklist_items.split(',').map(i => {
-                        const cleanItem = i.trim();
-                        return `
-                        <label class="flex items-center space-x-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:bg-blue-50 transition">
-                            <input type="checkbox" name="kit_item_${kitId}" value="${cleanItem}" class="w-5 h-5 text-blue-600 rounded cursor-pointer">
-                            <span class="font-bold text-slate-700 text-sm">${cleanItem}</span>
-                        </label>`;
-                    }).join('');
-                }
-
-                // --- SMART AUTO-MAPPING LOGIC ---
-                let extraItemsHTML = '';
-                
-                if (recipe && recipe.requires_pairing === true && recipe.paired_with_type) {
-                    const targetType = recipe.paired_with_type; 
-                    
-                    if (phase === 'Phase 1') {
-                        // 1. Cari Target Devices yang sedang berada di Merchant ini
-                        const deployedAtBusiness = masterKitsData.filter(k => 
-                            k.kit_type === targetType && 
-                            globalKitMap.has(k.kit_id) && 
-                            globalKitMap.get(k.kit_id).location === business &&
-                            globalKitMap.get(k.kit_id).status === 'Deployed'
-                        );
-
-                        // 2. Cari Target Devices yang masih Available
-                        const availablePairs = masterKitsData.filter(k => 
-                            k.kit_type === targetType && 
-                            k.area_name === document.getElementById('input-area').value && 
-                            (!globalKitMap.has(k.kit_id) || globalKitMap.get(k.kit_id).status === 'Available')
-                        );
-                        
-                        // Cek device Jomblo yang belum dipinang oleh iterasi Mono sebelumnya
-                        const availableOrphans = deployedAtBusiness.filter(k => !usedOrphans.has(k.kit_id));
-                        
-                        let autoSelectedId = "STANDALONE"; 
-                        let autoLabel = "";
-
-                        if (availableOrphans.length > 0) {
-                            autoSelectedId = availableOrphans[0].kit_id;
-                            usedOrphans.add(autoSelectedId); // Tandai sudah dipakai
-                            autoLabel = `<div class="mb-2 text-[10px] text-blue-600 font-bold italic bg-blue-50 p-2 rounded border border-blue-200"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Auto-assigned to existing device at location</div>`;
-                        } else if (deployedAtBusiness.length > 0) {
-                            autoLabel = `<div class="mb-2 text-[10px] text-slate-500 font-bold italic bg-slate-50 p-2 rounded border border-slate-200"><i class="fa-solid fa-circle-info mr-1"></i> All local devices paired. Defaulting to Standalone.</div>`;
-                        }
-
-                        let opts = `<option value="">-- Select Pairing Option --</option>`;
-                        opts += `<option value="STANDALONE" ${autoSelectedId === 'STANDALONE' ? 'selected' : ''}>No Pairing (Deploy as Standalone)</option>`;
-
-                        if (deployedAtBusiness.length > 0) {
-                            opts += `<optgroup label="Existing Device at Merchant">`;
-                            deployedAtBusiness.forEach(m => {
-                                const isSelected = autoSelectedId === m.kit_id ? 'selected' : '';
-                                opts += `<option value="${m.kit_id}" ${isSelected}>${m.kit_id} (Currently at ${business})</option>`;
-                            });
-                            opts += `</optgroup>`;
-                        }
-
-                        if (availablePairs.length > 0) {
-                            opts += `<optgroup label="Available in Warehouse">`;
-                            availablePairs.forEach(m => opts += `<option value="${m.kit_id}">${m.kit_id} (From Warehouse)</option>`);
-                            opts += `</optgroup>`;
-                        }
-                        
-                        extraItemsHTML = `
-                            <div class="mt-4 p-4 bg-slate-50 border border-slate-300 rounded-xl shadow-inner">
-                                <label class="block text-[10px] font-black text-slate-700 uppercase mb-2 tracking-widest">
-                                    <i class="fa-solid fa-link mr-1"></i> Action: Pair with ${targetType}
-                                </label>
-                                ${autoLabel}
-                                <select id="paired-device-${kitId}" class="w-full p-3 rounded-xl border border-slate-300 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 bg-white" required>
-                                    ${opts}
-                                </select>
-                            </div>
-                        `;
-                    } else if (phase === 'Phase 4') {
-                        const deployedPairs = masterKitsData.filter(k => k.kit_type === targetType && globalKitMap.get(k.kit_id)?.location === business);
-                        if (deployedPairs.length > 0) {
-                            const pairedId = deployedPairs[0].kit_id;
-                            extraItemsHTML = `
-                                <div class="mt-4 p-4 bg-slate-50 border border-slate-300 rounded-xl flex items-center justify-between shadow-sm">
-                                    <div>
-                                        <label class="block text-[10px] font-black text-slate-600 uppercase mb-1 tracking-widest">
-                                            <i class="fa-solid fa-link mr-1"></i> Paired ${targetType} (Auto)
-                                        </label>
-                                        <span class="font-black text-base text-slate-800">${pairedId}</span>
-                                    </div>
-                                    <i class="fa-solid fa-circle-check text-green-600 text-xl"></i>
-                                    <input type="hidden" id="paired-device-${kitId}" value="${pairedId}">
-                                </div>
-                            `;
-                        } else {
-                            extraItemsHTML = `<div class="mt-4 p-3 bg-red-50 text-[10px] text-red-600 font-bold italic rounded-xl border border-red-200"><i class="fa-solid fa-triangle-exclamation mr-1"></i> No paired ${targetType} detected here.</div>`;
-                        }
-                    }
-                }
-
-                const badge = getKitBadge(kitMaster.kit_type);
-                const textColor = badge.colorClass.split(' ')[1]; 
-
-                checklistHTML += `
-                    <div class="mb-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-sm">
-                        <h4 class="text-[10px] font-black uppercase tracking-widest mb-3 border-b border-slate-100 pb-2 flex items-center ${textColor}">
-                            ${badge.icon} <span class="mr-1">${kitId}</span> 
-                            <span class="opacity-60 font-bold">(${kitMaster.kit_type})</span>
-                        </h4>
-                        <div class="space-y-2">
-                            ${itemsHTML}
-                        </div>
-                        ${extraItemsHTML}
-                    </div>
-                `;
+                html += `<div class="mb-4 p-4 bg-white border border-slate-200 rounded-2xl"><h4 class="font-black text-xs mb-3">${runnerEscapeHTML(kitId)} (${runnerEscapeHTML(kit.kit_type)})</h4><div class="space-y-2">${items.map(value => `<label class="flex items-center space-x-3 p-3 rounded-xl border"><input type="checkbox" name="kit_item_${runnerEscapeHTML(kitId)}" value="${runnerEscapeHTML(value)}" class="w-5 h-5"><span>${runnerEscapeHTML(value)}</span></label>`).join('')}</div>${pairing}</div>`;
             }
-
-            if(overrideMessages.length > 0) {
-                errLabel.innerText = `OVERRIDE MODE: ` + overrideMessages.join(', ');
-                errLabel.classList.remove('hidden');
-            }
-
-            document.getElementById('kit-type-label').innerText = `${selectedKits.length} Kits Selected`;
-            document.getElementById('checklist-items').innerHTML = checklistHTML;
+            checklist.innerHTML = html;
+            checklist.querySelectorAll('input[type="checkbox"]').forEach(el => { el.checked = checkedValues.has(JSON.stringify([el.name, el.value])); });
+            checklist.querySelectorAll('select[id^="paired-device-"]').forEach(el => {
+                const previous = previousPairs.get(el.id);
+                if (previous && Array.from(el.options).some(option => option.value === previous)) el.value = previous;
+            });
+            document.getElementById('kit-type-label').textContent = `${selectedKits.length} Kits Selected`;
             document.getElementById('field-checklist').classList.remove('hidden');
+            updateKitTransitionPreview();
         }
-           
+
         function getGPS() {
             const gpsLabel = document.getElementById('gps-status'); const gpsInput = document.getElementById('input-gps');
             if (navigator.geolocation) {
@@ -1143,12 +1053,81 @@ document.getElementById('field-commons').classList.remove('hidden');            
             t.classList.remove('opacity-0'); setTimeout(() => t.classList.add('opacity-0'), 4000);
         }
 
-        function saveToOfflineQueue(payload) {
-            let queue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
-            queue.push(payload);
+        function isKitTransition(payload) {
+            return Boolean(payload.kit_id) && ['Phase 1', 'Phase 4'].includes(payload.phase);
+        }
+
+        function ensureKitRequestId(payload) {
+            if (!isKitTransition(payload)) return null;
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.request_id || '')) {
+                payload.request_id = crypto.randomUUID();
+            }
+            return payload.request_id;
+        }
+
+        function writeRunnerQueue(queue) {
             try { localStorage.setItem('runner_sync_queue', JSON.stringify(queue)); }
             catch { throw new Error('Penyimpanan perangkat penuh. Data dan foto masih ada di formulir ini. Jangan tutup halaman; sinkronkan antrean yang tersimpan lalu coba kirim lagi.'); }
             updateSyncUI();
+        }
+
+        function saveRunnerPayloads(payloads) {
+            const queue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
+            for (const payload of payloads) {
+                ensureKitRequestId(payload);
+                const index = queue.findIndex(item => (payload.id && item.id === payload.id) || (payload.request_id && item.request_id === payload.request_id));
+                if (index < 0) queue.push(payload); else queue[index] = payload;
+            }
+            // Persist the whole submission before its first network request.
+            writeRunnerQueue(queue);
+        }
+
+        function saveToOfflineQueue(payload) { saveRunnerPayloads([payload]); }
+
+        async function refreshRunnerKitStatus(ids) {
+            const uniqueIds = Array.from(new Set(ids));
+            const {data, error} = await scopeRunnerQuery(db.from('master_kits')
+                .select('id,kit_id,kit_type,area_name,current_status,last_location,status_deployment,last_sdr_name')
+                .in('kit_id', uniqueIds), 'area_name');
+            if (error) throw error;
+            if (!Array.isArray(data) || data.length !== uniqueIds.length || new Set(data.map(kit => kit.kit_id)).size !== uniqueIds.length || uniqueIds.some(id => !data.some(kit => kit.kit_id === id))) {
+                throw new Error('Sebagian kit tidak dapat diperiksa. Refresh daftar kit dan pilih ulang.');
+            }
+            for (const kit of data) {
+                const existing = masterKitsData.find(item => item.kit_id === kit.kit_id);
+                if (existing) Object.assign(existing, kit); else masterKitsData.push(kit);
+                globalKitMap.set(kit.kit_id, {location: normalizeKitLocation(kit.last_location), status: kit.status_deployment,
+                    last_sdr_name: kit.last_sdr_name, current_status: kit.current_status});
+            }
+            return data;
+        }
+
+        function describeKitTransition(payload, kit) {
+            const plan = getKitTransitionPlan(payload.phase, payload.business_name, kit);
+            const sdr = String(kit.last_sdr_name || payload.adjustment_sdr_name || '').trim();
+            return `${payload.kit_id}: tercatat di ${plan.location} (${kit.current_status || 'kondisi belum tercatat'})` +
+                plan.steps.map((step, index) => `\n  ${index + 1}. ${step.phase}: ${step.from} → ${step.to}${step.is_location_adjustment ? ' [penyesuaian]' : ''}`).join('') +
+                (plan.needsAdjustmentSdr ? `\n  SDR penyesuaian: ${sdr || 'belum dipilih'}` : '');
+        }
+
+        async function reviewQueuedKitPayload(payload) {
+            const [kit] = await refreshRunnerKitStatus([payload.kit_id]);
+            const plan = getKitTransitionPlan(payload.phase, payload.business_name, kit);
+            if (plan.needsAdjustmentSdr && !String(kit.last_sdr_name || payload.adjustment_sdr_name || '').trim()) {
+                const choices = masterSdrs.filter(sdr => sdr.area_name === payload.area);
+                if (!choices.length) throw new Error('SDR untuk penyesuaian belum tersedia di area ini. Minta admin menambahkan SDR, lalu Sync kembali.');
+                const answer = prompt(`SDR terakhir ${payload.kit_id} belum tercatat. Pilih nomor SDR untuk Phase 1 penyesuaian:\n\n` + choices.map((sdr, index) => `${index + 1}. ${sdr.sdr_name}`).join('\n'));
+                if (answer === null) return false;
+                const index = Number(answer) - 1;
+                if (!Number.isInteger(index) || index < 0 || index >= choices.length) throw new Error('Pilihan SDR tidak valid. Data masih di antrean; tekan Sync untuk memilih ulang.');
+                payload.adjustment_sdr_name = choices[index].sdr_name;
+            }
+            if (!confirm('Tinjau ulang rute kit sebelum sinkronisasi:\n\n' + describeKitTransition(payload, kit) + '\n\nFoto dan jumlah SD hanya pada transaksi terakhir. Lanjutkan?')) return false;
+            payload.expected_location = plan.location;
+            payload.needs_review = false;
+            payload.last_error = '';
+            saveToOfflineQueue(payload);
+            return true;
         }
 
         function updateSyncUI() {
@@ -1160,6 +1139,62 @@ document.getElementById('field-commons').classList.remove('hidden');            
         }
 
 async function processSinglePayload(p) {
+    if (['Phase 1', 'Phase 4'].includes(p.phase) && !String(p.kit_id || '').trim()) {
+        p.last_error = 'Data lama Phase 1/4 tidak memiliki Kit ID. Data tetap disimpan; hubungi admin untuk memeriksa kit yang dimaksud sebelum melanjutkan antrean.';
+        saveToOfflineQueue(p);
+        const error = new Error(p.last_error);
+        error.stopRunnerQueue = true;
+        throw error;
+    }
+    if (isKitTransition(p)) {
+        ensureKitRequestId(p);
+        saveToOfflineQueue(p);
+        if (p.needs_review || typeof p.expected_location !== 'string') {
+            p.needs_review = true;
+            saveToOfflineQueue(p);
+            const error = new Error('Rute kit perlu ditinjau ulang. Tekan Sync untuk memeriksa lokasi dan mengonfirmasi penyesuaian.');
+            error.stopRunnerQueue = true;
+            throw error;
+        }
+        try {
+            let photoUrl = p.uploaded_photo_url || null;
+            if (p.photo_b64 && !photoUrl) {
+                photoUrl = await uploadProofPhoto(p.photo_b64);
+                p.uploaded_photo_url = photoUrl;
+                saveToOfflineQueue(p);
+            }
+            const payload = {};
+            for (const key of ['sdr_name','adjustment_sdr_name','area','phase','runner_name','business_name','kit_id','kit_type','sd_qty','sd_uploaded','gps_location','device_condition','missing_or_issue','created_at','other_item','pickup_time','drop_off_time']) payload[key] = p[key] ?? null;
+            payload.proof_photo = photoUrl;
+            const {data, error} = await db.rpc('process_runner_kit_transition', {
+                p_request_id: p.request_id, p_payload: payload, p_expected_location: normalizeKitLocation(p.expected_location)
+            });
+            if (error) throw error;
+            if (!data || data.request_id !== p.request_id || data.kit_id !== p.kit_id) throw new Error('Server belum mengonfirmasi transaksi kit. Data tetap di antrean untuk dicoba kembali dengan ID yang sama.');
+            const currentLocation = normalizeKitLocation(data.current_location || data.final_location);
+            const currentDeployment = data.already_processed ? (currentLocation === 'Warehouse' ? 'Available' : 'Deployed') : data.status_deployment;
+            const kit = masterKitsData.find(item => item.kit_id === p.kit_id);
+            if (kit) {
+                kit.last_location = currentLocation;
+                kit.status_deployment = currentDeployment;
+                if (!data.already_processed && p.device_condition === 'Damaged') kit.current_status = 'Damaged';
+            }
+            globalKitMap.set(p.kit_id, {location: currentLocation, status: currentDeployment,
+                last_sdr_name: kit?.last_sdr_name || null, current_status: kit?.current_status || p.device_condition});
+            return data;
+        } catch (error) {
+            const code = String(error?.message || '');
+            if (/LOCATION_CHANGED|ADJUSTMENT_SDR_REQUIRED/.test(code)) {
+                p.needs_review = true;
+                error = new Error('Lokasi atau SDR kit berubah. Data belum diproses. Tekan Sync untuk meninjau rute terbaru.');
+            }
+            p.last_error = error.message || 'Transaksi kit belum terkirim.';
+            saveToOfflineQueue(p);
+            error.stopRunnerQueue = true;
+            throw error;
+        }
+    }
+
 
     let photoUrl = p.uploaded_photo_url || null;
     if (p.photo_b64 && !photoUrl) {
@@ -1241,348 +1276,175 @@ function openFOTracker(){
 
 let offlineSyncRunning = false;
 
-async function syncOfflineQueue() {
-            if (offlineSyncRunning) return;
-            if (!navigator.onLine) { alert("You are still offline. Please find a better signal."); return; }
+async function syncOfflineQueue(interactive = false, fromSubmit = false) {
+            if (offlineSyncRunning || (runnerSubmitRunning && !fromSubmit)) return {remaining: -1};
+            if (!navigator.onLine) {
+                if (interactive) alert('Masih offline. Data dan foto tetap tersimpan di perangkat.');
+                return {remaining: JSON.parse(localStorage.getItem('runner_sync_queue') || '[]').length};
+            }
             let queue = JSON.parse(localStorage.getItem('runner_sync_queue') || '[]');
-            if (queue.length === 0) return;
-
-            // --- FILTER SANITASI CACHE ---
-            // Bersihkan data sampah dari cache lama HP sebelum dikirim ke database
-            queue = queue.map(q => {
-                if (q.phase === 'Phase 2' || q.phase === 'Phase 3') {
-                    q.kit_id = null;
-                    q.kit_type = null;
-                    q.device_condition = null; // Phase 2 & 3 tidak butuh kondisi device
+            if (!queue.length) return {remaining: 0};
+            queue.forEach(payload => {
+                if (isKitTransition(payload)) {
+                    ensureKitRequestId(payload);
+                    if (typeof payload.expected_location !== 'string') payload.needs_review = true;
+                } else if (['Phase 2','Phase 3'].includes(payload.phase)) {
+                    payload.kit_id = null; payload.kit_type = null; payload.device_condition = null;
                 }
-                return q;
             });
-            // -----------------------------
-
+            writeRunnerQueue(queue);
             offlineSyncRunning = true;
-            const btn = document.getElementById('btn-sync-now');
-            btn.innerHTML = `<div class="spinner mr-1"></div> Syncing...`; btn.disabled = true;
-
-            let remainingQueue = [];
+            const button = document.getElementById('btn-sync-now');
+            button.innerHTML = '<div class="spinner mr-1"></div> Syncing...'; button.disabled = true;
             let failureMessage = '';
             try {
-                for (let i = 0; i < queue.length; i++) {
-                    try { await processSinglePayload(queue[i]); }
-                    catch (error) {
-                        remainingQueue.push(queue[i]);
-                        failureMessage = error.message || 'Data belum terkirim.';
-                        if (error.stopPhotoQueue) {
-                            remainingQueue.push(...queue.slice(i + 1));
-                            break;
+                while (queue.length) {
+                    const payload = queue[0];
+                    try {
+                        if (isKitTransition(payload) && payload.needs_review) {
+                            if (!interactive) { failureMessage = 'Ada rute kit yang perlu ditinjau. Tekan Sync untuk mengonfirmasi.'; break; }
+                            if (!await reviewQueuedKitPayload(payload)) { failureMessage = 'Peninjauan dibatalkan. Data tetap tersimpan di perangkat.'; break; }
                         }
+                        await processSinglePayload(payload);
+                        queue.shift();
+                        writeRunnerQueue(queue);
+                    } catch (error) {
+                        failureMessage = error.message || 'Data belum terkirim.';
+                        // Keep request IDs and uploaded references even after a failed response.
+                        writeRunnerQueue(queue);
+                        break; // Preserve ordering, including later operations on the same kit.
                     }
                 }
-                localStorage.setItem('runner_sync_queue', JSON.stringify(remainingQueue));
-                updateSyncUI(); fetchData();
-                if (remainingQueue.length === 0) showToast('Semua data tersimpan di server.');
-                else alert(failureMessage + '\n' + remainingQueue.length + ' data beserta foto tetap tersimpan di perangkat. Gunakan Sync untuk mencoba kembali.');
+                updateSyncUI();
+                if (!fromSubmit) {
+                    fetchData();
+                    if (!queue.length) showToast('Semua data tersimpan di server.');
+                    else if (interactive) alert((failureMessage || 'Data belum terkirim.') + '\n' + queue.length + ' data beserta foto tetap tersimpan. Tekan Sync untuk mencoba kembali.');
+                    else showToast(failureMessage || 'Sebagian data belum terkirim. Tekan Sync.', true);
+                }
+                return {remaining: queue.length, message: failureMessage};
             } finally {
                 offlineSyncRunning = false;
-                btn.innerHTML = `<i class="fa-solid fa-rotate mr-1"></i> Sync`; btn.disabled = false;
+                button.innerHTML = '<i class="fa-solid fa-rotate mr-1"></i> Sync'; button.disabled = false;
             }
         }
 
-        window.addEventListener('online', syncOfflineQueue);
+        window.addEventListener('online', () => syncOfflineQueue(false));
 
-        document.getElementById('runnerForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            if (offlineSyncRunning) { showToast('Tunggu sinkronisasi selesai sebelum mengirim data baru.', true); return; }
-            
-            if(!document.getElementById('input-gps').value) { alert("GPS Required! Please click Refresh GPS."); return; }
-            
-            const phase = document.getElementById('input-phase').value;
-            const business = document.getElementById('input-business').value;
-            if (!business) { alert("Merchant Location is required!"); return; }
+        function lockRunnerForm() {
+            const controls = Array.from(document.querySelectorAll('#runnerForm input, #runnerForm select, #runnerForm textarea, #runnerForm button'));
+            const disabled = controls.map(control => control.disabled);
+            controls.forEach(control => { control.disabled = true; });
+            return () => controls.forEach((control, index) => { control.disabled = disabled[index]; });
+        }
 
-            let hasKits = selectedKits.length > 0;
-            let condition = document.getElementById('input-condition').value || null;
-            let match = document.getElementById('input-match').value || null;
-            let sdQtyRaw = document.getElementById('input-sd').value;
-            let sdUploadQtyRaw = document.getElementById('input-sduploadqty').value;
-            
-            let photoCount = 1;
-            let sdrNameVal = document.getElementById('input-sdr-name').value || null;
-
-
-            if (phase === 'Phase 1') {
-                if (!sdrNameVal) { alert("SDR Name is required for Phase 1!"); return; } 
-                if (!hasKits) { alert("At least one Kit ID is required!"); return; }
-                if (!condition) { alert("Physical Integrity (Good/Damaged) is required!"); return; }
-                if (!match) { alert("Audit Checklist Match (Yes/No) is required!"); return; }
-            } else if (phase === 'Phase 2') {
-                if (!sdQtyRaw) { alert("SD Count quantity is required!"); return; }
-            } else if (phase === 'Phase 3') {
-                if (sdQtyRaw === "") {
-                    alert("SD Collected Quantity wajib diisi!");
-                    return;
+        document.getElementById('runnerForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            if (runnerSubmitRunning || offlineSyncRunning) { showToast('Tunggu pengiriman/sinkronisasi selesai.', true); return; }
+            const read = id => document.getElementById(id).value;
+            const phase = read('input-phase');
+            const business = read('input-business');
+            const area = read('input-area');
+            const runner = read('input-runner');
+            const gps = read('input-gps');
+            const condition = read('input-condition') || null;
+            const match = read('input-match');
+            const sdr = read('input-sdr-name') || null;
+            const isKitPhase = ['Phase 1','Phase 4'].includes(phase);
+            if (!gps) { alert('GPS Required! Please click Refresh GPS.'); return; }
+            if (!business || !area || !runner || !['Phase 1','Phase 2','Phase 3','Phase 4'].includes(phase)) { alert('Lengkapi area, runner, merchant, dan fase.'); return; }
+            if (isKitPhase && !selectedKits.length) { alert('At least one Kit ID is required!'); return; }
+            if (isKitPhase && (!condition || !match)) { alert('Pilih kondisi kit dan hasil pencocokan checklist.'); return; }
+            if (phase === 'Phase 1' && !sdr) { alert('SDR Name is required for Phase 1!'); return; }
+            const uploadChoice = read('input-sdupload');
+            if (phase === 'Phase 4' && !['Yes','No'].includes(uploadChoice)) { alert('Apakah SD akan diupload? (Yes / No)'); return; }
+            const sdRaw = read('input-sd');
+            const uploadedRaw = read('input-sduploadqty');
+            if (['Phase 2','Phase 3'].includes(phase) && (sdRaw === '' || !Number.isInteger(Number(sdRaw)) || Number(sdRaw) < 0)) { alert('Jumlah SD harus berupa angka bulat 0 atau lebih.'); return; }
+            if (phase === 'Phase 3' && (uploadedRaw === '' || !Number.isInteger(Number(uploadedRaw)) || Number(uploadedRaw) < 0 || Number(uploadedRaw) > Number(sdRaw))) { alert('Jumlah SD di-upload harus 0 atau lebih dan tidak melebihi jumlah SD yang dikumpulkan.'); return; }
+            const operations = isKitPhase ? getFormKitOperations() : [];
+            const sourcePhotos = new Map();
+            const confirmedKits = new Map();
+            if (isKitPhase) {
+                for (const operation of operations) {
+                    const kit = masterKitsData.find(item => item.kit_id === operation.kit_id);
+                    if (!kit || kit.area_name !== area || (!getRunnerDataAreas().includes('All') && !getRunnerDataAreas().includes(kit.area_name))) { alert(`Kit ${operation.kit_id} tidak tersedia di area ini.`); return; }
+                    const file = document.getElementById('photo-' + operation.photoKitId)?.files?.[0];
+                    if (!file) { alert(`Foto ${operation.photoKitId} belum diambil.`); return; }
+                    sourcePhotos.set(operation.photoKitId, file);
                 }
-
-                if (sdUploadQtyRaw === "") {
-                    alert("Jumlah SD Card di Upload wajib diisi! Isi 0 jika tidak ada SD yang di-upload.");
-                    return;
-                }
-
-                const collectedQty = Number(sdQtyRaw);
-                const uploadedQty = Number(sdUploadQtyRaw);
-
-                if (!Number.isInteger(collectedQty) || collectedQty < 0) {
-                    alert("SD Collected Quantity harus berupa angka bulat 0 atau lebih.");
-                    return;
-                }
-
-                if (!Number.isInteger(uploadedQty) || uploadedQty < 0) {
-                    alert("Jumlah SD Card di Upload harus berupa angka bulat 0 atau lebih.");
-                    return;
-                }
-
-                if (uploadedQty > collectedQty) {
-                    alert(`Jumlah SD Card di Upload (${uploadedQty}) tidak boleh lebih besar dari SD Collected (${collectedQty}).`);
-                    return;
-                }
-            } else 
-            if (phase === 'Phase 4') {
-
-    if (!hasKits) {
-        alert("At least one Kit ID is required!");
-        return;
-    }
-
-    if (!condition) {
-        alert("Physical Integrity (Good/Damaged) is required!");
-        return;
-    }
-
-    if (!match) {
-        alert("Audit Checklist Match (Yes/No) is required!");
-        return;
-    }
-
-    if (!document.getElementById("input-sdupload").value) {
-        alert("Apakah SD akan diupload? (Yes / No)");
-        return;
-    }
-
-}
-
-            const btnLoad = document.getElementById('btn-loading'); 
-            btnLoad.classList.remove('hidden'); document.getElementById('btn-submit').disabled = true;
-
-            
-
-            let sdQtyParsed = sdQtyRaw !== "" ? parseInt(sdQtyRaw, 10) : null;
-            let sdUploadQtyParsed = sdUploadQtyRaw !== "" ? parseInt(sdUploadQtyRaw, 10) : 0;
-
+            } else {
+                const file = document.getElementById('general-photo').files[0];
+                if (!file) { alert('Foto wajib diambil.'); return; }
+                sourcePhotos.set('general', file);
+            }
+            const basePayload = {
+                sdr_name: phase === 'Phase 1' ? sdr : null, adjustment_sdr_name: phase === 'Phase 4' ? sdr : null,
+                area, phase, runner_name: runner, business_name: business,
+                sd_qty: isKitPhase ? null : Number(sdRaw),
+                sd_uploaded: phase === 'Phase 3' ? Number(uploadedRaw) : phase === 'Phase 4' && uploadChoice === 'Yes' ? 1 : 0,
+                gps_location: gps, device_condition: isKitPhase ? condition : null,
+                missing_or_issue: read('input-issue'), created_at: new Date().toISOString(),
+                other_item: read('input-other-item'), pickup_time: read('input-pickup-time'), drop_off_time: read('input-dropoff-time')
+            };
+            const pairSelections = new Map(selectedKits.map(id => [id, document.getElementById('paired-device-' + id)?.value || null]));
+            runnerSubmitRunning = true;
+            const unlock = lockRunnerForm();
+            const spinner = document.getElementById('btn-loading');
+            spinner.classList.remove('hidden');
             try {
-
-                const basePayload = {
-
-    sdr_name: phase === 'Phase 1' ? sdrNameVal : null,
-
-    area: document.getElementById('input-area').value,
-
-    phase: phase,
-
-    runner_name: document.getElementById('input-runner').value,
-
-    business_name: business,
-
-    sd_qty: sdQtyParsed,
-
-    sd_uploaded:
-
-phase === "Phase 3"
-
-? sdUploadQtyParsed
-
-: 0,
-
-    gps_location: document.getElementById('input-gps').value,
-
-    device_condition: condition,
-
-    missing_or_issue: document.getElementById('input-issue').value,
-
-    created_at: new Date().toISOString(),
-
-    other_item: document.getElementById('input-other-item').value,
-
-    pickup_time: document.getElementById('input-pickup-time').value,
-
-    drop_off_time: document.getElementById('input-dropoff-time').value
-
-};
-
-                let payloadsToProcess = [];
-
-                if (selectedKits.length > 0 && (phase === 'Phase 1' || phase === 'Phase 4')) {
-                    for (let i = 0; i < selectedKits.length; i++) {
-                        const kId = selectedKits[i];
-                        const kMaster = masterKitsData.find(k => k.kit_id === kId);
-                        
-                        // Menangkap Info Pairing untuk dimasukkan ke Log UI nanti via kolom 'other_item'
-                        let pairStatusText = "";
-                        const pairedEl = document.getElementById(`paired-device-${kId}`);
-                        if (pairedEl) {
-                            if (pairedEl.value === 'STANDALONE' || !pairedEl.value) {
-                                pairStatusText = "STANDALONE";
-                            } else {
-                                pairStatusText = `Paired with ${pairedEl.value}`;
-                            }
-                        }
-
-                        const file =
-document.getElementById(`photo-${kId}`).files[0];
-
-if(!file){
-
-    alert(`Foto ${kId} belum diambil.`);
-    btnLoad.classList.add('hidden');
-    document.getElementById('btn-submit').disabled=false;
-    return;
-
-}
-
-const photoBase64 =
-await compressImageToBase64(file);
-
-let sdUploaded = 0;
-
-if (phase === "Phase 4") {
-
-    const uploadChoice =
-        document.getElementById("input-sdupload").value;
-
-    if (!uploadChoice) {
-
-        alert("Apakah SD akan diupload?");
-
-        btnLoad.classList.add("hidden");
-        document.getElementById("btn-submit").disabled = false;
-        return;
-
-    }
-
-    sdUploaded = uploadChoice === "Yes" ? 1 : 0;
-
-}
-                        // Payload Utama (Misal: Mono)
-let mainPayload = {
-
-    ...basePayload,
-
-    photo_b64: photoBase64,
-
-    sd_uploaded: sdUploaded,
-
-    id:'local_'+Date.now()+'_'+i,
-
-    kit_id:kId,
-
-    kit_type:kMaster ? kMaster.kit_type : null
-
-};
-                        // Inject informasi pairing ke dalam other_item agar bisa dipanggil saat render UI Activity Log
-                        if (pairStatusText) {
-                            mainPayload.other_item = basePayload.other_item ? `${basePayload.other_item} | [${pairStatusText}]` : `[${pairStatusText}]`;
-                        }
-
-                        payloadsToProcess.push(mainPayload);
-
-                        // Payload Kedua (Misal: Wristcam yang dipasangkan otomatis)
-                        if (pairedEl && pairedEl.value && pairedEl.value !== 'STANDALONE') {
-                            const pairedId = pairedEl.value;
-                            const pairedMaster = masterKitsData.find(k => k.kit_id === pairedId);
-                            
-payloadsToProcess.push({
-
-    ...basePayload,
-
-    photo_b64: photoBase64,
-
-    sd_uploaded: sdUploaded,
-
-    id:'local_pair_' + Date.now() + '_' + i,
-                                kit_type: pairedMaster ? pairedMaster.kit_type : 'Paired Device',
-                                missing_or_issue: (basePayload.missing_or_issue ? basePayload.missing_or_issue + " | " : "") + `[Auto-Paired with ${kId}]`
-                            });
-                        }
+                if (isKitPhase) {
+                    if (navigator.onLine) await refreshRunnerKitStatus(operations.map(operation => operation.kit_id));
+                    for (const operation of operations) {
+                        const kit = masterKitsData.find(item => item.kit_id === operation.kit_id);
+                        if (!kit || kit.area_name !== area) throw new Error(`Area kit ${operation.kit_id} berubah. Pilih ulang kit sesuai area.`);
+                        confirmedKits.set(operation.kit_id, {...kit});
                     }
-} else {
-
-const file =
-document.getElementById("general-photo").files[0];
-
-if(!file){
-
-    alert("Foto wajib diambil.");
-
-    btnLoad.classList.add('hidden');
-
-    document.getElementById('btn-submit').disabled=false;
-
-    return;
-
-}
-
-const photoBase64 =
-await compressImageToBase64(file);
-payloadsToProcess.push({
-
-    ...basePayload,
-
-    photo_b64: photoBase64,
-
-    id: 'local_' + Date.now(),
-
-    kit_id: null,
-
-    kit_type: null
-
-});
+                    updateKitTransitionPreview(); // Only route/SDR hints change; photo/checklist inputs stay intact.
+                    const unknownSdr = operations.filter(operation => {
+                        const kit = confirmedKits.get(operation.kit_id);
+                        return getKitTransitionPlan(phase, business, kit).needsAdjustmentSdr && !String(kit.last_sdr_name || sdr || '').trim();
+                    });
+                    if (unknownSdr.length) { alert('SDR terakhir belum tercatat untuk ' + unknownSdr.map(operation => operation.kit_id).join(', ') + '. Pilih SDR pada formulir untuk Phase 1 penyesuaian.'); return; }
+                    const routes = operations.map(operation => describeKitTransition({...basePayload, kit_id: operation.kit_id}, confirmedKits.get(operation.kit_id)));
+                    if (!confirm(`Proses ${operations.length} kit berikut?\n\n${routes.join('\n\n')}\n\nFoto dan jumlah SD hanya dicatat pada transaksi terakhir.${navigator.onLine ? '' : '\nAnda sedang offline. Rute akan diperiksa lagi saat sinkronisasi.'}`)) return;
                 }
-
-                let queuedCount = 0;
-                let uploadStopped = false;
-                let pendingMessage = '';
-                for (const payload of payloadsToProcess) {
-                    if (navigator.onLine && !uploadStopped) {
-                        try { await processSinglePayload(payload); }
-                        catch (error) {
-                            saveToOfflineQueue(payload);
-                            queuedCount++;
-                            pendingMessage = error.message || 'Data belum terkirim.';
-                            uploadStopped = Boolean(error.stopPhotoQueue);
-                        }
-                    } else { saveToOfflineQueue(payload); queuedCount++; }
-                }
-                if (queuedCount) {
-                    showToast(queuedCount + ' data disimpan di perangkat, belum terkirim.', true);
-                    if (pendingMessage) alert(pendingMessage + '\nData dan foto sudah disimpan di perangkat. Gunakan Sync untuk mencoba kembali. Jangan hapus data browser sebelum sinkronisasi berhasil.');
+                const photos = new Map();
+                for (const [id, file] of sourcePhotos) photos.set(id, await compressImageToBase64(file));
+                const payloads = isKitPhase ? operations.map(operation => {
+                    const kit = confirmedKits.get(operation.kit_id);
+                    const requestId = crypto.randomUUID();
+                    const pair = pairSelections.get(operation.kit_id);
+                    const pairNote = operation.pairedWith ? `[Auto-Paired with ${operation.pairedWith}]` : pair ? `[${pair === 'STANDALONE' ? 'STANDALONE' : 'Paired with ' + pair}]` : '';
+                    return {...basePayload, id: 'local_' + requestId, request_id: requestId, transition_version: 1,
+                        kit_id: operation.kit_id, kit_type: kit.kit_type, photo_b64: photos.get(operation.photoKitId),
+                        expected_location: normalizeKitLocation(kit.last_location),
+                        other_item: [basePayload.other_item, pairNote].filter(Boolean).join(' | ')};
+                }) : [{...basePayload, id: 'local_' + crypto.randomUUID(), kit_id: null, kit_type: null, photo_b64: photos.get('general')}];
+                // An atomic local write happens before sending any item, so closing the tab
+                // or receiving an uncertain network response retains the same request UUID.
+                saveRunnerPayloads(payloads);
+                const result = navigator.onLine ? await syncOfflineQueue(false, true) : {remaining: JSON.parse(localStorage.getItem('runner_sync_queue') || '[]').length};
+                if (result.remaining) {
+                    showToast(result.remaining + ' data disimpan di perangkat, belum terkirim.', true);
+                    if (result.message) alert(result.message + '\nData dan foto tetap di perangkat. Gunakan Sync untuk meninjau atau mencoba kembali.');
                 } else showToast('Data berhasil dikirim.');
-
-                this.reset(); 
-                document.getElementById('input-sdr-name').value = ""; document.getElementById('input-condition').value = "";
-                document.getElementById('input-match').value = ""; document.getElementById('input-sdupload').value = ""; document.getElementById('input-sduploadqty').value = "";
-                document.getElementById('checklist-items').innerHTML = ""; document.getElementById('input-business').value = ""; 
-                document.getElementById('label-business').innerText = "Select Location..."; document.getElementById('label-business').classList.add('text-slate-400');
-                document.getElementById('input-gps').value = ""; document.getElementById('gps-status').innerHTML = `<span class="font-bold text-red-600 italic uppercase">GPS Required</span>`;
-                document.querySelectorAll('.btn-toggle').forEach(btn => btn.classList.remove('active'));
-                
-                toggleFormFields(); switchTab('dashboard'); 
-
-            } catch (e) { alert("Application Error: " + e.message); } 
-            finally { btnLoad.classList.add('hidden'); document.getElementById('btn-submit').disabled = false; }
+                this.reset();
+                ['input-sdr-name','input-condition','input-match','input-sdupload','input-sduploadqty','input-business','input-gps'].forEach(id => { document.getElementById(id).value = ''; });
+                document.getElementById('checklist-items').innerHTML = '';
+                document.getElementById('label-business').textContent = 'Select Location...';
+                document.getElementById('label-business').classList.add('text-slate-400');
+                document.getElementById('gps-status').innerHTML = '<span class="font-bold text-red-600 italic uppercase">GPS Required</span>';
+                document.querySelectorAll('.btn-toggle').forEach(button => button.classList.remove('active'));
+                toggleFormFields(); switchTab('dashboard');
+            } catch (error) { alert('Data belum selesai dikirim: ' + error.message); }
+            finally { runnerSubmitRunning = false; spinner.classList.add('hidden'); unlock(); }
         });
 
         async function fetchData(reuseKitStatus = false) {
             try {
                 let query = db.from('transactions')
-                    .select('id,created_at,phase,business_name,runner_name,kit_id,sd_qty,other_item')
+                    .select('id,created_at,phase,business_name,runner_name,kit_id,sd_qty,other_item,is_location_adjustment')
                     .order('created_at', { ascending: false }).limit(50);
                 if ((currentUser.role || '').toLowerCase() === 'staff') query = query.eq('runner_name', currentUser.runner_name);
                 else query = scopeRunnerQuery(query, 'area');
@@ -1590,7 +1452,7 @@ payloadsToProcess.push({
                 if (error) throw error;
                 globalTransactions = data || [];
                 if (!reuseKitStatus) {
-                    const kitStatusData = await fetchRunnerKits('kit_id,last_location,status_deployment,current_status');
+                    const kitStatusData = await fetchRunnerKits('kit_id,last_location,status_deployment,current_status,last_sdr_name');
                     updateRunnerKitMap(kitStatusData);
                     const statusById = new Map(kitStatusData.map(kit => [kit.kit_id, kit]));
                     for (const kit of masterKitsData) {
@@ -1609,7 +1471,7 @@ payloadsToProcess.push({
                     if (trx.phase === 'Phase 1' && trx.other_item) {
                         if (trx.other_item.includes("Paired with")) {
                             let match = trx.other_item.match(/Paired with [A-Za-z0-9\-]+/);
-                            if(match) pairingBadgeHTML = `<div class="text-[10px] text-blue-700 bg-blue-100 px-2 py-1 rounded-md border border-blue-200 mt-2 inline-block shadow-sm"><i class="fa-solid fa-link mr-1"></i>${match[0]}</div>`;
+                            if(match) pairingBadgeHTML = `<div class="text-[10px] text-blue-700 bg-blue-100 px-2 py-1 rounded-md border border-blue-200 mt-2 inline-block shadow-sm"><i class="fa-solid fa-link mr-1"></i>${runnerEscapeHTML(match[0])}</div>`;
                         } else if (trx.other_item.includes("STANDALONE")) {
                             pairingBadgeHTML = `<div class="text-[10px] text-slate-500 bg-slate-100 px-2 py-1 rounded-md border border-slate-300 mt-2 inline-block shadow-sm"><i class="fa-solid fa-unlink mr-1"></i>STANDALONE</div>`;
                         }
@@ -1618,11 +1480,12 @@ payloadsToProcess.push({
                     return `
                     <li class="p-6 flex justify-between items-center hover:bg-slate-50 ${trx.is_offline ? 'bg-amber-50/50' : ''}">
                         <div class="space-y-1">
-                            <p class="font-black text-slate-800 text-base">${trx.business_name} ${trx.is_offline ? '<span class="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded ml-2 shadow-sm uppercase tracking-widest"><i class="fa-solid fa-clock mr-1"></i>Pending</span>' : ''}</p>
-                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-tighter">${trx.runner_name} &bull; ${trx.kit_id || trx.sd_qty+' SD'}</p>
+                            <p class="font-black text-slate-800 text-base">${runnerEscapeHTML(trx.business_name)} ${trx.is_offline ? '<span class="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded ml-2 shadow-sm uppercase tracking-widest"><i class="fa-solid fa-clock mr-1"></i>Pending</span>' : ''}</p>
+                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-tighter">${runnerEscapeHTML(trx.runner_name)} &bull; ${runnerEscapeHTML(trx.kit_id || trx.sd_qty+' SD')}</p>
+                            ${trx.is_location_adjustment ? '<span class="inline-block text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-1 rounded-md mt-1">Penyesuaian otomatis</span>' : ''}
                             ${pairingBadgeHTML}
                         </div>
-                        <span class="text-[10px] font-black bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 uppercase tracking-widest">${trx.phase}</span>
+                        <span class="text-[10px] font-black bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 uppercase tracking-widest">${runnerEscapeHTML(trx.phase)}</span>
                     </li>`
                 }).join('');
                 
