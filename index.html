@@ -196,33 +196,10 @@ class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 spac
 
 </div>
 
-<div id="field-sdupload"
-class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
-
-    <label class="block text-[10px] font-black text-amber-700 uppercase tracking-widest mb-3">
-        Begin SD Upload Now? *
-    </label>
-
-    <input type="hidden" id="input-sdupload">
-
-    <div class="mt-4 flex gap-3">
-
-
-<button
-type="button"
-class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400"            onclick="setBtn(this,'input-sdupload','Yes')">
-            YES
-        </button>
-
-<button
-type="button"
-class="btn-toggle flex-1 py-4 bg-white border border-slate-300 rounded-2xl font-bold text-slate-400"
-            onclick="setBtn(this,'input-sdupload','No')">
-            NO
-        </button>
-
-    </div>
-
+<div id="field-sdupload" class="hidden bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 space-y-4">
+    <h3 class="text-xs font-black text-amber-700 uppercase tracking-widest">Upload SD per kit *</h3>
+    <p class="text-xs text-slate-500">Pilih untuk setiap kit. Upload menambah hitungan upload 1 sesuai jenis kit; Tidak upload menambah 0.</p>
+    <div id="kit-sd-upload-options" class="space-y-3"></div>
 </div>
 
                 <div id="field-commons" class="hidden space-y-6">
@@ -321,6 +298,7 @@ const db = createClient(
         let globalTransactions = [], globalKitMap = new Map();
         let masterAreas = [], masterRunners = [], masterBusinesses = [], masterKitsData = [], masterKitTypes = [], masterSdrs = [];
         let selectedKits = [];
+        const kitSdUploadChoices = new Map();
         let isSubmittingBusiness = false;
         let runnerSubmitRunning = false;
 
@@ -545,13 +523,9 @@ const db = createClient(
                 if (location !== 'Warehouse') add('Phase 4', location, location, 'Warehouse', true);
                 add('Phase 1', business, 'Warehouse', business, false);
             } else if (phase === 'Phase 4') {
-                if (location !== business) {
-                    if (location !== 'Warehouse') add('Phase 4', location, location, 'Warehouse', true);
-                    add('Phase 1', business, 'Warehouse', business, true);
-                }
-                add('Phase 4', business, business, 'Warehouse', false);
+                add('Phase 4', business, location, 'Warehouse', false);
             } else throw new Error('Fase perpindahan kit tidak valid.');
-            return {location, steps, needsAdjustmentSdr: phase === 'Phase 4' && location !== business,
+            return {location, steps, needsAdjustmentSdr: false, locationOverride: phase === 'Phase 4' && location !== business,
                 finalLocation: phase === 'Phase 4' ? 'Warehouse' : business};
         }
 
@@ -567,6 +541,43 @@ const db = createClient(
             return Array.from(operations.values());
         }
 
+        function getKitSdUploadChoice(kitId) {
+            return kitSdUploadChoices.get(kitId) || '';
+        }
+
+        function setKitSdUploadChoice(kitId, value) {
+            if (['Yes', 'No'].includes(value)) kitSdUploadChoices.set(kitId, value);
+            else kitSdUploadChoices.delete(kitId);
+        }
+
+        function renderKitSdUploadChoices(operations = getFormKitOperations()) {
+            const isReturn = document.getElementById('input-phase').value === 'Phase 4';
+            const active = new Set(operations.map(operation => operation.kit_id));
+            for (const id of kitSdUploadChoices.keys()) {
+                if (!isReturn || !active.has(id)) kitSdUploadChoices.delete(id);
+            }
+            const container = document.getElementById('kit-sd-upload-options');
+            container.innerHTML = '';
+            document.getElementById('field-sdupload').classList.toggle('hidden', !isReturn || !operations.length);
+            if (!isReturn) return;
+            for (const operation of operations) {
+                const block = document.createElement('div');
+                block.className = 'rounded-xl border border-slate-200 p-3';
+                const label = document.createElement('label');
+                label.setAttribute('for', 'kit-sd-upload-' + operation.kit_id);
+                label.className = 'block text-sm font-bold mb-2';
+                label.textContent = operation.kit_id + (operation.pairedWith ? ' · pasangan ' + operation.pairedWith : '');
+                const select = document.createElement('select');
+                select.id = 'kit-sd-upload-' + operation.kit_id;
+                select.disabled = runnerSubmitRunning;
+                select.className = 'w-full p-3 rounded-xl border bg-white text-sm font-bold';
+                select.innerHTML = '<option value="">-- Pilih upload SD --</option><option value="Yes">Upload (+1)</option><option value="No">Tidak upload (+0)</option>';
+                select.value = getKitSdUploadChoice(operation.kit_id);
+                select.addEventListener('change', () => setKitSdUploadChoice(operation.kit_id, select.value));
+                block.append(label, select); container.appendChild(block);
+            }
+        }
+
         function updateKitTransitionPreview() {
             const phase = document.getElementById('input-phase').value;
             const business = document.getElementById('input-business').value;
@@ -574,7 +585,7 @@ const db = createClient(
             const sdrField = document.getElementById('field-sdr');
             const sdrHint = document.getElementById('sdr-adjustment-hint');
             const operations = getFormKitOperations();
-            let needsFallback = false;
+            renderKitSdUploadChoices(operations);
             if (!business || !operations.length || !['Phase 1', 'Phase 4'].includes(phase)) {
                 preview.classList.add('hidden');
                 if (phase === 'Phase 4') sdrField.classList.add('hidden');
@@ -586,17 +597,16 @@ const db = createClient(
                 if (!kit) return `<p>${runnerEscapeHTML(operation.kit_id)}: data belum tersedia.</p>`;
                 const plan = getKitTransitionPlan(phase, business, kit);
                 const lastSdr = String(kit.last_sdr_name || '').trim();
-                if (plan.needsAdjustmentSdr && !lastSdr) needsFallback = true;
-                const sdr = lastSdr || document.getElementById('input-sdr-name').value;
                 return `<div><p class="font-black">${runnerEscapeHTML(kit.kit_id)}${operation.pairedWith ? ' · pasangan ' + runnerEscapeHTML(operation.pairedWith) : ''}</p>
                     <p>Tercatat di ${runnerEscapeHTML(plan.location)} · ${runnerEscapeHTML(kit.current_status || 'Kondisi belum tercatat')}</p>
                     <ol class="list-decimal ml-4 mt-1">${plan.steps.map(step => `<li>${step.phase}: ${runnerEscapeHTML(step.from)} → ${runnerEscapeHTML(step.to)}${step.is_location_adjustment ? ' (penyesuaian otomatis)' : ''}</li>`).join('')}</ol>
-                    ${plan.needsAdjustmentSdr ? `<p class="mt-1">SDR penyesuaian: ${runnerEscapeHTML(sdr || 'Pilih SDR di atas')}${lastSdr ? ' (SDR terakhir kit)' : ''}</p>` : ''}
+                    ${plan.locationOverride ? '<p class="mt-1 font-bold">Lokasi berbeda: langsung dikembalikan ke Warehouse dalam satu Phase 4.</p>' : ''}
+                    ${phase === 'Phase 4' && lastSdr ? `<p class="mt-1">Last SDR: ${runnerEscapeHTML(lastSdr)}</p>` : ''}
                     ${kit.current_status === 'Damaged' ? '<p class="mt-1 font-bold">Status Damaged tetap tercatat saat kit diproses.</p>' : ''}</div>`;
             }).join('') + '<p class="border-t border-amber-200 pt-2">Foto dan jumlah SD hanya dicatat pada transaksi terakhir. Rute diperiksa kembali saat dikirim.</p>';
             preview.classList.remove('hidden');
-            if (phase === 'Phase 4') sdrField.classList.toggle('hidden', !needsFallback);
-            sdrHint.classList.toggle('hidden', !needsFallback || phase !== 'Phase 4');
+            if (phase === 'Phase 4') sdrField.classList.add('hidden');
+            sdrHint.classList.add('hidden');
         }
 
         function renderKitList() {
@@ -679,6 +689,7 @@ function renderSelectedKits() {
 
         function resetKit() {
             selectedKits = [];
+            kitSdUploadChoices.clear();
             if (document.getElementById('selected-kits-container')) document.getElementById('selected-kits-container').innerHTML = '';
             document.getElementById('kit-photo-container').innerHTML='';
             document.getElementById('input-kit').value = ""; 
@@ -805,7 +816,7 @@ function renderSelectedKits() {
             // Pastikan input tersembunyi benar-benar kosong saat ganti fase
             document.getElementById('input-condition').value = "";
             document.getElementById('input-match').value = "";
-            document.getElementById('input-sdupload').value = "";
+
             document.getElementById('input-sduploadqty').value = "";
             document.getElementById('input-sdr-name').value = "";
             // Hilangkan warna biru/aktif pada tombol toggle YES/NO/GOOD/DAMAGED
@@ -1107,7 +1118,9 @@ document.getElementById('field-commons').classList.remove('hidden');            
             const sdr = String(kit.last_sdr_name || payload.adjustment_sdr_name || '').trim();
             return `${payload.kit_id}: tercatat di ${plan.location} (${kit.current_status || 'kondisi belum tercatat'})` +
                 plan.steps.map((step, index) => `\n  ${index + 1}. ${step.phase}: ${step.from} → ${step.to}${step.is_location_adjustment ? ' [penyesuaian]' : ''}`).join('') +
-                (plan.needsAdjustmentSdr ? `\n  SDR penyesuaian: ${sdr || 'belum dipilih'}` : '');
+                (plan.locationOverride ? '\n  Langsung ke Warehouse; tidak ada Phase 1 tambahan.' : '') +
+                (payload.phase === 'Phase 4' && sdr ? `\n  Last SDR: ${sdr}` : '') +
+                (payload.phase === 'Phase 4' ? `\n  Upload SD: ${Number(payload.sd_uploaded) === 1 ? 'Ya (+1)' : 'Tidak (+0)'}` : '');
         }
 
         async function reviewQueuedKitPayload(payload) {
@@ -1356,13 +1369,16 @@ async function syncOfflineQueue(interactive = false, fromSubmit = false) {
             if (isKitPhase && !selectedKits.length) { alert('At least one Kit ID is required!'); return; }
             if (isKitPhase && (!condition || !match)) { alert('Pilih kondisi kit dan hasil pencocokan checklist.'); return; }
             if (phase === 'Phase 1' && !sdr) { alert('SDR Name is required for Phase 1!'); return; }
-            const uploadChoice = read('input-sdupload');
-            if (phase === 'Phase 4' && !['Yes','No'].includes(uploadChoice)) { alert('Apakah SD akan diupload? (Yes / No)'); return; }
             const sdRaw = read('input-sd');
             const uploadedRaw = read('input-sduploadqty');
             if (['Phase 2','Phase 3'].includes(phase) && (sdRaw === '' || !Number.isInteger(Number(sdRaw)) || Number(sdRaw) < 0)) { alert('Jumlah SD harus berupa angka bulat 0 atau lebih.'); return; }
             if (phase === 'Phase 3' && (uploadedRaw === '' || !Number.isInteger(Number(uploadedRaw)) || Number(uploadedRaw) < 0 || Number(uploadedRaw) > Number(sdRaw))) { alert('Jumlah SD di-upload harus 0 atau lebih dan tidak melebihi jumlah SD yang dikumpulkan.'); return; }
             const operations = isKitPhase ? getFormKitOperations() : [];
+            const uploadChoices = new Map(operations.map(operation => [operation.kit_id, getKitSdUploadChoice(operation.kit_id)]));
+            if (phase === 'Phase 4') {
+                const missing = operations.filter(operation => !['Yes','No'].includes(uploadChoices.get(operation.kit_id)));
+                if (missing.length) { alert('Pilih Upload / Tidak upload untuk kit: ' + missing.map(operation => operation.kit_id).join(', ')); return; }
+            }
             const sourcePhotos = new Map();
             const confirmedKits = new Map();
             if (isKitPhase) {
@@ -1379,10 +1395,10 @@ async function syncOfflineQueue(interactive = false, fromSubmit = false) {
                 sourcePhotos.set('general', file);
             }
             const basePayload = {
-                sdr_name: phase === 'Phase 1' ? sdr : null, adjustment_sdr_name: phase === 'Phase 4' ? sdr : null,
+                sdr_name: phase === 'Phase 1' ? sdr : null, adjustment_sdr_name: null,
                 area, phase, runner_name: runner, business_name: business,
                 sd_qty: isKitPhase ? null : Number(sdRaw),
-                sd_uploaded: phase === 'Phase 3' ? Number(uploadedRaw) : phase === 'Phase 4' && uploadChoice === 'Yes' ? 1 : 0,
+                sd_uploaded: phase === 'Phase 3' ? Number(uploadedRaw) : 0,
                 gps_location: gps, device_condition: isKitPhase ? condition : null,
                 missing_or_issue: read('input-issue'), created_at: new Date().toISOString(),
                 other_item: read('input-other-item'), pickup_time: read('input-pickup-time'), drop_off_time: read('input-dropoff-time')
@@ -1406,7 +1422,7 @@ async function syncOfflineQueue(interactive = false, fromSubmit = false) {
                         return getKitTransitionPlan(phase, business, kit).needsAdjustmentSdr && !String(kit.last_sdr_name || sdr || '').trim();
                     });
                     if (unknownSdr.length) { alert('SDR terakhir belum tercatat untuk ' + unknownSdr.map(operation => operation.kit_id).join(', ') + '. Pilih SDR pada formulir untuk Phase 1 penyesuaian.'); return; }
-                    const routes = operations.map(operation => describeKitTransition({...basePayload, kit_id: operation.kit_id}, confirmedKits.get(operation.kit_id)));
+                    const routes = operations.map(operation => describeKitTransition({...basePayload, kit_id: operation.kit_id, sd_uploaded: uploadChoices.get(operation.kit_id) === 'Yes' ? 1 : 0}, confirmedKits.get(operation.kit_id)));
                     if (!confirm(`Proses ${operations.length} kit berikut?\n\n${routes.join('\n\n')}\n\nFoto dan jumlah SD hanya dicatat pada transaksi terakhir.${navigator.onLine ? '' : '\nAnda sedang offline. Rute akan diperiksa lagi saat sinkronisasi.'}`)) return;
                 }
                 const photos = new Map();
@@ -1418,6 +1434,7 @@ async function syncOfflineQueue(interactive = false, fromSubmit = false) {
                     const pairNote = operation.pairedWith ? `[Auto-Paired with ${operation.pairedWith}]` : pair ? `[${pair === 'STANDALONE' ? 'STANDALONE' : 'Paired with ' + pair}]` : '';
                     return {...basePayload, id: 'local_' + requestId, request_id: requestId, transition_version: 1,
                         kit_id: operation.kit_id, kit_type: kit.kit_type, photo_b64: photos.get(operation.photoKitId),
+                        sd_uploaded: phase === 'Phase 4' && uploadChoices.get(operation.kit_id) === 'Yes' ? 1 : 0,
                         expected_location: normalizeKitLocation(kit.last_location),
                         other_item: [basePayload.other_item, pairNote].filter(Boolean).join(' | ')};
                 }) : [{...basePayload, id: 'local_' + crypto.randomUUID(), kit_id: null, kit_type: null, photo_b64: photos.get('general')}];
@@ -1430,7 +1447,7 @@ async function syncOfflineQueue(interactive = false, fromSubmit = false) {
                     if (result.message) alert(result.message + '\nData dan foto tetap di perangkat. Gunakan Sync untuk meninjau atau mencoba kembali.');
                 } else showToast('Data berhasil dikirim.');
                 this.reset();
-                ['input-sdr-name','input-condition','input-match','input-sdupload','input-sduploadqty','input-business','input-gps'].forEach(id => { document.getElementById(id).value = ''; });
+                ['input-sdr-name','input-condition','input-match','input-sduploadqty','input-business','input-gps'].forEach(id => { document.getElementById(id).value = ''; });
                 document.getElementById('checklist-items').innerHTML = '';
                 document.getElementById('label-business').textContent = 'Select Location...';
                 document.getElementById('label-business').classList.add('text-slate-400');
@@ -1438,7 +1455,7 @@ async function syncOfflineQueue(interactive = false, fromSubmit = false) {
                 document.querySelectorAll('.btn-toggle').forEach(button => button.classList.remove('active'));
                 toggleFormFields(); switchTab('dashboard');
             } catch (error) { alert('Data belum selesai dikirim: ' + error.message); }
-            finally { runnerSubmitRunning = false; spinner.classList.add('hidden'); unlock(); }
+            finally { runnerSubmitRunning = false; spinner.classList.add('hidden'); unlock(); renderKitSdUploadChoices(); }
         });
 
         async function fetchData(reuseKitStatus = false) {
